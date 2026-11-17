@@ -1,5 +1,28 @@
 (['C:\\wamp64\\www\\Time '
   'attendance\\hikvision_attendance\\src\\listener_isup.py'],
+ ['C:\\wamp64\\www\\Time attendance\\hikvision_attendance\\src'],
+ [],
+ [('C:\\Users\\CHEF '
+   'EQUIPE\\AppData\\Local\\Python\\pythoncore-3.15-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks',
+   -1000),
+  ('C:\\Users\\CHEF '
+   'EQUIPE\\AppData\\Local\\Python\\pythoncore-3.15-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib',
+   -1000)],
+ {},
+ [],
+ [],
+ False,
+ {},
+ 0,
+ [],
+ [('static\\logo.png.png',
+   'C:\\wamp64\\www\\Time '
+   'attendance\\hikvision_attendance\\static\\logo.png.png',
+   'DATA')],
+ '3.15.2 (tags/v3.15.2:5e58eaa, Oct 25 2026, 17:27:03) [MSC v.1951 64 bit '
+ '(AMD64)]',
+ [('pyi_rth_inspect',
+   'C:\\Users\\CHEF '
    'EQUIPE\\AppData\\Local\\Python\\pythoncore-3.15-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_inspect.py',
    'PYSOURCE'),
   ('pyi_rth_pkgutil',

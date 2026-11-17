@@ -1,37 +1,17 @@
 import sys
 import os
 
-# Ajustez le chemin si nécessaire pour importer get_db_connection
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from database.db_config import get_db_connection
 
-def run_migration():
+def init_database():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # 1. Création de la table des entreprises
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS companies (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(150) NOT NULL,
-                    slug VARCHAR(100) UNIQUE NOT NULL,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Insérer une entreprise par défaut (pour vos données actuelles)
-            cursor.execute("""
-                INSERT INTO companies (id, name, slug) 
-                VALUES (1, 'Entreprise Principale (Démo)', 'demo') 
-                ON CONFLICT (id) DO NOTHING
-            """)
-
-            # 2. Table des horaires de travail + company_id
+            # 1. Table des horaires de travail
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS work_schedules (
                     id SERIAL PRIMARY KEY,
-                    company_id INT REFERENCES companies(id) ON DELETE CASCADE,
                     name VARCHAR(100) NOT NULL,
                     start_time TIME NOT NULL,
                     end_time TIME NOT NULL,
@@ -39,38 +19,63 @@ def run_migration():
                 )
             """)
             
-            # 3. Ajout de company_id dans employees si absent
+            # 2. Table de liaison pour les horaires multiples par travailleur
             cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='employees' and column_name='company_id'
+                CREATE TABLE IF NOT EXISTS employee_schedules (
+                    badge_or_card_id VARCHAR(100) NOT NULL,
+                    schedule_id INT NOT NULL REFERENCES work_schedules(id) ON DELETE CASCADE,
+                    PRIMARY KEY (badge_or_card_id, schedule_id)
+                )
             """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE employees ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-                cursor.execute("UPDATE employees SET company_id = 1 WHERE company_id IS NULL")
 
-            # 4. Ajout de company_id dans devices_mapping si absent
+            # 3. Table des employés
             cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='devices_mapping' and column_name='company_id'
+                CREATE TABLE IF NOT EXISTS employees (
+                    badge_or_card_id VARCHAR(100) PRIMARY KEY,
+                    first_name VARCHAR(100),
+                    last_name VARCHAR(100),
+                    department VARCHAR(100),
+                    is_active BOOLEAN DEFAULT TRUE
+                )
             """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE devices_mapping ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-                cursor.execute("UPDATE devices_mapping SET company_id = 1 WHERE company_id IS NULL")
 
-            # 5. Ajout de company_id dans attendance_raw_logs si absent
+            # 4. Table de renommage des appareils / terminaux
             cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='attendance_raw_logs' and column_name='company_id'
+                CREATE TABLE IF NOT EXISTS devices_mapping (
+                    device_key VARCHAR(100) PRIMARY KEY,
+                    friendly_name VARCHAR(100) NOT NULL
+                )
             """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE attendance_raw_logs ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-                cursor.execute("UPDATE attendance_raw_logs SET company_id = 1 WHERE company_id IS NULL")
+
+            # 5. Table des pointages bruts
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS attendance_raw_logs (
+                    id SERIAL PRIMARY KEY,
+                    badge_or_card_id VARCHAR(100),
+                    punch_timestamp TIMESTAMP,
+                    device_id VARCHAR(100),
+                    punch_type VARCHAR(20) DEFAULT 'IN'
+                )
+            """)
+
+            # Insertion des horaires par défaut s'il n'en existe aucun
+            cursor.execute("SELECT COUNT(*) as cnt FROM work_schedules")
+            res = cursor.fetchone()
+            if res and res['cnt'] == 0:
+                cursor.execute("""
+                    INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
+                    VALUES 
+                    ('Standard (08:00 - 17:00)', '08:00:00', '17:00:00', 30),
+                    ('Vacation Matin (06:00 - 14:00)', '06:00:00', '14:00:00', 15),
+                    ('Vacation Soir (14:00 - 22:00)', '14:00:00', '22:00:00', 15),
+                    ('Shift Nuit (22:00 - 06:00)', '22:00:00', '06:00:00', 20)
+                """)
 
             conn.commit()
         conn.close()
-        print("Migration multi-entreprises exécutée avec succès !")
+        print("Base de données initialisée avec succès (tables vérifiées/créées) !")
     except Exception as e:
-        print(f"Erreur lors de la migration BDD : {e}")
+        print(f"Erreur lors de l'initialisation BDD : {e}")
 
 if __name__ == "__main__":
-    run_migration()
+    init_database()
