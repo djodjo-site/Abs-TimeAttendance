@@ -1945,12 +1945,16 @@ async def receive_attendance(request: Request):
         if query_dev:
             device_id = f"Terminal_{query_dev.strip()}"
 
+        # Extraire le bloc JSON même s'il est encapsulé dans multipart/form-data (--MIME_boundary)
+        json_match = re.search(r'\{[\s\S]*\}', raw_text)
+        json_str = json_match.group(0) if json_match else raw_text
+
         try:
-            data = json.loads(raw_text)
+            data = json.loads(json_str)
 
             def find_key(obj, key):
                 if isinstance(obj, dict):
-                    if key in obj and obj[key]:
+                    if key in obj and obj[key] is not None and str(obj[key]).strip() != "":
                         return str(obj[key]).strip()
                     for _, v in obj.items():
                         res = find_key(v, key)
@@ -1970,13 +1974,20 @@ async def receive_attendance(request: Request):
                         device_id = val
                         break
 
-            for key_candidate in ["employeeNoString", "employeeNo", "cardNo", "employeeID", "userID"]:
-                val = find_key(data, key_candidate)
-                if val:
-                    employee_no = val
-                    break
-        except Exception:
-            pass
+            # Priorité absolue à AccessControllerEvent.employeeNoString puis employeeNo
+            acs_event = data.get("AccessControllerEvent") if isinstance(data, dict) else None
+            if isinstance(acs_event, dict) and acs_event.get("employeeNoString") is not None and str(acs_event["employeeNoString"]).strip() != "":
+                employee_no = str(acs_event["employeeNoString"]).strip()
+            elif isinstance(acs_event, dict) and acs_event.get("employeeNo") is not None and str(acs_event["employeeNo"]).strip() != "":
+                employee_no = str(acs_event["employeeNo"]).strip()
+            else:
+                for key_candidate in ["employeeNoString", "employeeNo"]:
+                    val = find_key(data, key_candidate)
+                    if val:
+                        employee_no = val
+                        break
+        except Exception as e:
+            print(f"Erreur parsing JSON Hikvision : {e}")
 
         if not device_id:
             for dev_pattern in [
@@ -1990,17 +2001,22 @@ async def receive_attendance(request: Request):
 
         if employee_no == "UNKNOWN":
             for pattern in [
-                r'"(?:employeeNoString|employeeNo|cardNo|employeeID)"\s*[:=]\s*["\']?([^"\'<>,\s]+)["\']?',
+                r'"(?:employeeNoString|employeeNo)"\s*[:=]\s*["\']?([^"\'<>,\s]+)["\']?',
                 r'<employeeNoString>([^<]+)</employeeNoString>',
-                r'<employeeNo>([^<]+)</employeeNo>',
-                r'<cardNo>([^<]+)</cardNo>'
+                r'<employeeNo>([^<]+)</employeeNo>'
             ]:
                 match = re.search(pattern, raw_text)
                 if match:
                     employee_no = match.group(1).strip()
                     break
 
-        if employee_no == "UNKNOWN" or not employee_no or len(employee_no) > 20:
+        # Ignorer les identifiants non signés 64-bit / faux cardNo ou matricules invalides
+        if (
+            employee_no == "UNKNOWN"
+            or not employee_no
+            or len(employee_no) > 15
+            or employee_no.startswith("18446744073609")
+        ):
             return Response(content="<Response><statusString>IGNORED</statusString></Response>", media_type="application/xml", status_code=200)
 
         if not device_id:
