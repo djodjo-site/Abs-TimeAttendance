@@ -16,6 +16,7 @@ from database.db_config import get_db_connection
 
 app = FastAPI(title="Hikvision Attendance System")
 
+
 # Route directe pour servir le logo ABS
 @app.get("/static/logo.png")
 async def get_logo():
@@ -25,155 +26,111 @@ async def get_logo():
         return FileResponse(logo_path)
     return Response(status_code=404)
 
+
 DRH_USERNAME = "drh"
 DRH_PASSWORD = "password123"
 
-# Fonction utilitaire pour initialiser les tables multi-entreprises et horaires par défaut
+
+def _table_exists(cursor, table_name: str) -> bool:
+    cursor.execute("""
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = %s
+        ) AS exists_flag
+    """, (table_name,))
+    res = cursor.fetchone()
+    return bool(res and res.get("exists_flag"))
+
+
+# Fonction utilitaire pour initialiser les tables et horaires par défaut
 def init_database_tables():
+    conn = None
     try:
         conn = get_db_connection()
+        conn.autocommit = False
         with conn.cursor() as cursor:
-            # 1. Création de la table des entreprises
+            # Table des employés (si schema.sql ne l'a pas encore créée)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS companies (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(150) NOT NULL,
-                    slug VARCHAR(100) UNIQUE NOT NULL,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                CREATE TABLE IF NOT EXISTS employees (
+                    badge_or_card_id VARCHAR(100) PRIMARY KEY,
+                    first_name VARCHAR(100),
+                    last_name VARCHAR(100),
+                    department VARCHAR(100),
+                    is_active BOOLEAN DEFAULT TRUE
                 )
             """)
-            
-            # Insérer une entreprise par défaut (pour les données existantes)
+
+            # Table des logs bruts (si schema.sql ne l'a pas encore créée)
             cursor.execute("""
-                INSERT INTO companies (id, name, slug) 
-                VALUES (1, 'Entreprise Principale (Démo)', 'demo') 
-                ON CONFLICT (id) DO NOTHING
+                CREATE TABLE IF NOT EXISTS attendance_raw_logs (
+                    id SERIAL PRIMARY KEY,
+                    badge_or_card_id VARCHAR(100),
+                    punch_timestamp TIMESTAMP,
+                    device_id VARCHAR(100),
+                    punch_type VARCHAR(20) DEFAULT 'IN'
+                )
             """)
 
-            # 2. Table de renommage des appareils + company_id
+            # Table de renommage des appareils
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS devices_mapping (
                     device_key VARCHAR(100) PRIMARY KEY,
-                    friendly_name VARCHAR(100) NOT NULL,
-                    company_id INT REFERENCES companies(id) ON DELETE CASCADE
+                    friendly_name VARCHAR(100) NOT NULL
                 )
             """)
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='devices_mapping' and column_name='company_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE devices_mapping ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-            cursor.execute("UPDATE devices_mapping SET company_id = 1 WHERE company_id IS NULL")
 
-            # 3. Table des horaires de travail + company_id
+            # Table des horaires de travail
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS work_schedules (
                     id SERIAL PRIMARY KEY,
-                    company_id INT REFERENCES companies(id) ON DELETE CASCADE,
                     name VARCHAR(100) NOT NULL,
                     start_time TIME NOT NULL,
                     end_time TIME NOT NULL,
                     late_tolerance_minutes INT DEFAULT 30
                 )
             """)
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='work_schedules' and column_name='company_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE work_schedules ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-            cursor.execute("UPDATE work_schedules SET company_id = 1 WHERE company_id IS NULL")
-            
-            # 4. Table de liaison pour les horaires multiples par travailleur
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS employee_schedules (
-                    badge_or_card_id VARCHAR(100) NOT NULL,
-                    schedule_id INT NOT NULL REFERENCES work_schedules(id) ON DELETE CASCADE,
-                    PRIMARY KEY (badge_or_card_id, schedule_id)
-                )
-            """)
 
-            # 5. Ajout de company_id dans employees si absent
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='employees' and column_name='company_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE employees ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-            cursor.execute("UPDATE employees SET company_id = 1 WHERE company_id IS NULL")
-
-            # 6. Ajout de company_id dans attendance_raw_logs si absent
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='attendance_raw_logs' and column_name='company_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE attendance_raw_logs ADD COLUMN company_id INT REFERENCES companies(id) ON DELETE CASCADE")
-            cursor.execute("UPDATE attendance_raw_logs SET company_id = 1 WHERE company_id IS NULL")
-
-            # Insérer des horaires par défaut pour l'entreprise 1 s'il n'en existe aucun
-            cursor.execute("SELECT COUNT(*) as cnt FROM work_schedules WHERE company_id = 1")
+            # Insérer un horaire par défaut s'il n'en existe aucun
+            cursor.execute("SELECT COUNT(*) as cnt FROM work_schedules")
             res = cursor.fetchone()
             if res and res['cnt'] == 0:
                 cursor.execute("""
-                    INSERT INTO work_schedules (company_id, name, start_time, end_time, late_tolerance_minutes)
-                    VALUES 
-                    (1, 'Standard (08:00 - 17:00)', '08:00:00', '17:00:00', 30),
-                    (1, 'Vacation Matin (06:00 - 14:00)', '06:00:00', '14:00:00', 15),
-                    (1, 'Vacation Soir (14:00 - 22:00)', '14:00:00', '22:00:00', 15),
-                    (1, 'Shift Nuit (22:00 - 06:00)', '22:00:00', '06:00:00', 20)
+                    INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
+                    VALUES ('Standard (08:00 - 17:00)', '08:00:00', '17:00:00', 30)
                 """)
 
-            conn.commit()
-        conn.close()
-        print("Structure multi-entreprises et horaires multiples initialisée avec succès !")
+            # Vérifier si la colonne schedule_id existe dans employees, sinon l'ajouter
+            if _table_exists(cursor, "employees"):
+                cursor.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'employees' AND column_name = 'schedule_id'
+                """)
+                if not cursor.fetchone():
+                    cursor.execute("""
+                        ALTER TABLE employees ADD COLUMN schedule_id INT REFERENCES work_schedules(id)
+                    """)
+
+        conn.commit()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         print(f"Erreur initialisation tables BDD : {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 @app.on_event("startup")
 async def startup_event():
     init_database_tables()
-
-
-def get_best_matching_schedule(check_in_dt, assigned_schedules, all_schedules):
-    """
-    Détermine l'horaire le plus adapté pour un pointage donné.
-    Priorité aux horaires assignés à l'employé, sinon aux horaires globaux du système.
-    """
-    candidates = assigned_schedules if assigned_schedules else all_schedules
-    if not candidates:
-        return {
-            "name": "Standard",
-            "start_time": time(8, 0),
-            "end_time": time(17, 0),
-            "late_tolerance_minutes": 30
-        }
-
-    if isinstance(check_in_dt, datetime):
-        cin_time = check_in_dt.time()
-    else:
-        cin_time = check_in_dt
-
-    cin_minutes = cin_time.hour * 60 + cin_time.minute
-
-    best_sched = candidates[0]
-    min_diff = float('inf')
-
-    for s in candidates:
-        st = s['start_time']
-        st_minutes = st.hour * 60 + st.minute
-        
-        diff = abs(cin_minutes - st_minutes)
-        # Gestion du roulement autour de minuit
-        diff = min(diff, 1440 - diff)
-
-        if diff < min_diff:
-            min_diff = diff
-            best_sched = s
-
-    return best_sched
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -254,86 +211,88 @@ async def login_page(error: str = None):
     """
     return HTMLResponse(content=html_content)
 
+
 @app.post("/login")
 async def login_action(username: str = Form(...), password: str = Form(...)):
     if username == DRH_USERNAME and password == DRH_PASSWORD:
         response = RedirectResponse(url="/", status_code=303)
         response.set_cookie(key="drh_session", value="authenticated", httponly=True)
-        response.set_cookie(key="company_id", value="1", httponly=True)
         return response
     else:
         return RedirectResponse(url="/login?error=Identifiants+incorrects", status_code=303)
+
 
 @app.get("/logout")
 async def logout():
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(key="drh_session")
-    response.delete_cookie(key="company_id")
     return response
 
+
+@app.head("/")
+async def head_root():
+    return Response(status_code=200)
+
+
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
     employees = []
     devices = []
     schedules = []
-    emp_schedules_map = {}
-    
+
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             try:
                 cursor.execute("""
-                    SELECT e.*
-                    FROM employees e 
-                    WHERE e.company_id = %s
-                    ORDER BY COALESCE(NULLIF(TRIM(e.department), ''), 'Non assigné') ASC, e.first_name ASC, e.last_name ASC
-                """, (company_id,))
+                    SELECT e.*, s.name as schedule_name
+                    FROM employees e
+                    LEFT JOIN work_schedules s ON e.schedule_id = s.id
+                    ORDER BY e.first_name ASC
+                """)
                 employees = cursor.fetchall()
             except Exception:
+                conn.rollback()
                 employees = []
-                
+
             try:
-                cursor.execute("SELECT * FROM work_schedules WHERE company_id = %s ORDER BY id ASC", (company_id,))
+                cursor.execute("SELECT * FROM work_schedules ORDER BY id ASC")
                 schedules = cursor.fetchall()
             except Exception:
+                conn.rollback()
                 schedules = []
-                
-            # Récupération des horaires multiples assignés
-            try:
-                cursor.execute("""
-                    SELECT es.badge_or_card_id, s.name, s.start_time, s.end_time
-                    FROM employee_schedules es
-                    JOIN work_schedules s ON es.schedule_id = s.id
-                    WHERE s.company_id = %s
-                """, (company_id,))
-                for row in cursor.fetchall():
-                    b_id = row['badge_or_card_id']
-                    if b_id not in emp_schedules_map:
-                        emp_schedules_map[b_id] = []
-                    emp_schedules_map[b_id].append(f"{row['name']} ({str(row['start_time'])[:5]}-{str(row['end_time'])[:5]})")
-            except Exception as e:
-                print(f"Erreur chargement horaires employés : {e}")
 
-            cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL AND company_id = %s", (company_id,))
+            cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL")
             raw_devs = [row['device_id'] for row in cursor.fetchall()]
-            
-            cursor.execute("SELECT * FROM devices_mapping WHERE company_id = %s", (company_id,))
+
+            cursor.execute("SELECT * FROM devices_mapping")
             mappings = {row['device_key']: row['friendly_name'] for row in cursor.fetchall()}
-            
+
             all_keys = set(raw_devs).union(set(mappings.keys()))
-            
+
             for dev in all_keys:
                 devices.append({
                     "key": dev,
                     "name": mappings.get(dev, dev)
                 })
-                
-        conn.close()
+
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         print(f"Attention - Connexion BDD non établie : {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     alert_html = ""
     if error:
@@ -342,70 +301,34 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
         alert_html = f'<div class="alert alert-success alert-dismissible fade show" role="alert"><i class="fa-solid fa-circle-check me-2"></i>{success}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
 
     emp_rows_html = ""
-    dept_options_html = '<option value="ALL">Tous les départements</option>'
     if employees:
-        from collections import OrderedDict
-        grouped_emps = OrderedDict()
         for emp in employees:
-            dept_label = (emp.get('department') or '').strip() or 'Non assigné'
-            if dept_label not in grouped_emps:
-                grouped_emps[dept_label] = []
-            grouped_emps[dept_label].append(emp)
-
-        for dept_label, dept_emps in grouped_emps.items():
-            dept_options_html += f'<option value="{dept_label}">{dept_label} ({len(dept_emps)})</option>'
+            is_act = emp.get('is_active', True)
+            status_badge = '<span class="badge bg-success bg-opacity-10 text-success">Actif</span>' if is_act else '<span class="badge bg-danger bg-opacity-10 text-danger">Inactif</span>'
             emp_rows_html += f"""
-                <tr class="table-light dept-group-header" data-dept="{dept_label}">
-                    <td colspan="6" class="ps-3 py-2 fw-bold text-primary border-top border-bottom">
-                        <i class="fa-solid fa-building me-2"></i> Département : {dept_label}
-                        <span class="badge bg-primary bg-opacity-10 text-primary ms-2 dept-count-badge">{len(dept_emps)} employé(s)</span>
+                <tr>
+                    <td class="ps-3"><code>{emp['badge_or_card_id']}</code></td>
+                    <td class="fw-semibold">{emp['first_name']} {emp['last_name']}</td>
+                    <td>{emp.get('department') or '-'}</td>
+                    <td><span class="badge bg-light text-dark border">{emp.get('schedule_name') or 'Standard'}</span></td>
+                    <td>{status_badge}</td>
+                    <td class="pe-3 text-end">
+                        <a href="/employees/edit/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-primary me-1" title="Modifier"><i class="fa-solid fa-pen-to-square"></i></a>
+                        <a href="/employees/delete/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-danger" title="Supprimer" onclick="return confirm('Voulez-vous vraiment supprimer cet employé ?');"><i class="fa-solid fa-trash"></i></a>
                     </td>
                 </tr>
             """
-            for emp in dept_emps:
-                b_id = emp['badge_or_card_id']
-                is_act = emp.get('is_active', True)
-                status_badge = '<span class="badge bg-success bg-opacity-10 text-success">Actif</span>' if is_act else '<span class="badge bg-danger bg-opacity-10 text-danger">Inactif</span>'
-                full_name = f"{emp['first_name']} {emp['last_name']}".strip()
-                search_text = f"{full_name} {b_id} {dept_label}".lower()
-                
-                assigned_scheds = emp_schedules_map.get(b_id, [])
-                if assigned_scheds:
-                    sched_badges = "".join([f'<span class="badge bg-light text-dark border me-1 mb-1 d-inline-block">{s}</span>' for s in assigned_scheds])
-                else:
-                    sched_badges = '<span class="badge bg-secondary bg-opacity-10 text-secondary">Horaires par défaut</span>'
-
-                emp_rows_html += f"""
-                    <tr class="emp-data-row" data-dept="{dept_label}" data-search="{search_text}">
-                        <td class="ps-3"><code>{b_id}</code></td>
-                        <td class="fw-semibold">{full_name}</td>
-                        <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{dept_label}</span></td>
-                        <td>{sched_badges}</td>
-                        <td>{status_badge}</td>
-                        <td class="pe-3 text-end">
-                            <a href="/employees/edit/{b_id}" class="btn btn-sm btn-outline-primary me-1" title="Modifier"><i class="fa-solid fa-pen-to-square"></i></a>
-                            <a href="/employees/delete/{b_id}" class="btn btn-sm btn-outline-danger" title="Supprimer" onclick="return confirm('Voulez-vous vraiment supprimer cet employé ?');"><i class="fa-solid fa-trash"></i></a>
-                        </td>
-                    </tr>
-                """
     else:
         emp_rows_html = """
-                <tr id="no-emp-initial">
+                <tr>
                     <td colspan="6" class="text-center py-4 text-muted">Aucun employé trouvé.</td>
                 </tr>
         """
 
     sched_rows_html = ""
-    sched_checkboxes_html = ""
+    sched_options_html = ""
     for s in schedules:
-        sched_checkboxes_html += f"""
-            <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" name="schedule_ids" value="{s['id']}" id="sched_check_{s['id']}">
-                <label class="form-check-label small" for="sched_check_{s['id']}">
-                    <strong>{s['name']}</strong> ({str(s['start_time'])[:5]} - {str(s['end_time'])[:5]})
-                </label>
-            </div>
-        """
+        sched_options_html += f'<option value="{s["id"]}">{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
         sched_rows_html += f"""
             <tr>
                 <td class="ps-3 fw-semibold">{s['name']}</td>
@@ -437,7 +360,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 </tr>
             """
     else:
-        dev_rows_html = "<tr><td colspan=\"3\" class=\"text-center py-3 text-muted\">Aucun terminal détecté pour l'instant. Effectuez un pointage.</td></tr>"
+        dev_rows_html = '<tr><td colspan="3" class="text-center py-3 text-muted">Aucun terminal détecté pour l\'instant. Effectuez un pointage.</td></tr>'
 
     html_content = f"""
     <!DOCTYPE html>
@@ -477,14 +400,6 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 padding: 0.5em 0.8em;
                 font-weight: 500;
                 border-radius: 6px;
-            }}
-            .schedule-box {{
-                max-height: 140px;
-                overflow-y: auto;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 8px;
-                background-color: #fafafa;
             }}
         </style>
     </head>
@@ -533,14 +448,9 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 </div>
                 <div class="col-md-4">
                     <div class="card border-start border-info border-4">
-                        <div class="card-body d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="text-muted fw-semibold mb-1">Terminaux Connectés</h6>
-                                <h3 class="fw-bold text-info mb-0">{len(devices)} détecté(s)</h3>
-                            </div>
-                            <div class="text-info bg-info bg-opacity-10 p-3 rounded-circle">
-                                <i class="fa-solid fa-network-wired fa-xl"></i>
-                            </div>
+                        <div class="card-body">
+                            <h6 class="text-muted fw-semibold mb-1">Terminaux Connectés</h6>
+                            <h3 class="fw-bold text-info mb-0">{len(devices)} détecté(s)</h3>
                         </div>
                     </div>
                 </div>
@@ -572,13 +482,13 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-lg-5">
                     <div class="card h-100">
                         <div class="card-header bg-success text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> Ajouter un Horaire / Shift de Travail</h5>
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> Configurer un Horaire de Travail</h5>
                         </div>
                         <div class="card-body p-4">
                             <form action="/schedules/add" method="POST">
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Nom de l'horaire / Vacation</label>
-                                    <input type="text" class="form-control" name="name" placeholder="ex: Shift Matin, Shift Nuit" required>
+                                    <label class="form-label text-secondary small fw-bold">Nom de l'horaire</label>
+                                    <input type="text" class="form-control" name="name" placeholder="ex: Horaire Normal, Équipe Nuit" required>
                                 </div>
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
@@ -602,7 +512,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-lg-7">
                     <div class="card h-100">
                         <div class="card-header bg-dark text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> Catalogue des Horaires Disponibles</h5>
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> Horaires configurés</h5>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
@@ -688,11 +598,10 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                     <input type="text" class="form-control" name="department" placeholder="ex: Informatique">
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Horaires & Shifts assignés (Choix multiple)</label>
-                                    <div class="schedule-box">
-                                        {sched_checkboxes_html if sched_checkboxes_html else '<span class="text-muted small">Aucun horaire créé.</span>'}
-                                    </div>
-                                    <div class="form-text small">Si aucun n'est coché, tous les horaires du système s'appliqueront par défaut selon le pointage.</div>
+                                    <label class="form-label text-secondary small fw-bold">Horaire de travail assigné</label>
+                                    <select class="form-select" name="schedule_id">
+                                        {sched_options_html}
+                                    </select>
                                 </div>
                                 <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> Enregistrer l'employé</button>
                             </form>
@@ -702,194 +611,47 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
 
                 <div class="col-lg-8">
                     <div class="card mt-0">
-                        <div class="card-header py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                            <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> Liste des Employés par Département</h5>
+                        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> Liste des Employés</h5>
                             <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> Voir la synthèse globale</a>
-                        </div>
-                        <div class="card-body bg-light border-bottom py-2 px-3">
-                            <div class="row g-2 align-items-center">
-                                <div class="col-md-6">
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
-                                        <input type="text" id="empSearchInput" class="form-control" placeholder="Filtrer par nom, prénom ou matricule...">
-                                        <button class="btn btn-outline-secondary" type="button" id="clearEmpSearch" title="Effacer"><i class="fa-solid fa-xmark"></i></button>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <select id="empDeptFilter" class="form-select form-select-sm">
-                                        {dept_options_html}
-                                    </select>
-                                </div>
-                                <div class="col-md-2 text-end">
-                                    <span id="empFilterCounter" class="badge bg-primary bg-opacity-10 text-primary w-100 py-2">{len(employees)} au total</span>
-                                </div>
-                            </div>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0" id="employeesTable">
+                                <table class="table table-hover align-middle mb-0">
                                     <thead>
                                         <tr>
                                             <th class="ps-3">Matricule / Badge</th>
                                             <th>Nom & Prénom</th>
                                             <th>Département</th>
-                                            <th>Horaires assignés</th>
+                                            <th>Horaire assigné</th>
                                             <th>Statut</th>
                                             <th class="pe-3 text-end">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="employeesTableBody">
+                                    <tbody>
                                         {emp_rows_html}
-                                        <tr id="noEmpSearchResult" style="display: none;">
-                                            <td colspan="6" class="text-center py-4 text-muted">Aucun employé ne correspond à votre recherche.</td>
-                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-                        <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center py-2 px-3 gap-2">
-                            <small class="text-muted fw-semibold" id="empPaginationInfo">Affichage 0 - 0 sur 0</small>
-                            <nav aria-label="Pagination des employés">
-                                <ul class="pagination pagination-sm mb-0" id="empPaginationControls"></ul>
-                            </nav>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-        <script>
-            document.addEventListener("DOMContentLoaded", function() {{
-                const ITEMS_PER_PAGE = 10;
-                let currentPage = 1;
-
-                const searchInput = document.getElementById("empSearchInput");
-                const clearSearchBtn = document.getElementById("clearEmpSearch");
-                const deptFilter = document.getElementById("empDeptFilter");
-                const allEmpRows = Array.from(document.querySelectorAll(".emp-data-row"));
-                const allDeptHeaders = Array.from(document.querySelectorAll(".dept-group-header"));
-                const noResultRow = document.getElementById("noEmpSearchResult");
-                const paginationInfo = document.getElementById("empPaginationInfo");
-                const paginationControls = document.getElementById("empPaginationControls");
-                const filterCounter = document.getElementById("empFilterCounter");
-
-                function updateEmployeesTable() {{
-                    const query = (searchInput ? searchInput.value : "").trim().toLowerCase();
-                    const selectedDept = deptFilter ? deptFilter.value : "ALL";
-
-                    const matchingRows = allEmpRows.filter(row => {{
-                        const rowDept = row.getAttribute("data-dept");
-                        const rowSearch = row.getAttribute("data-search") || "";
-                        const matchDept = (selectedDept === "ALL" || rowDept === selectedDept);
-                        const matchQuery = (!query || rowSearch.includes(query));
-                        return matchDept && matchQuery;
-                    }});
-
-                    const totalItems = matchingRows.length;
-                    const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
-                    if (currentPage > totalPages) currentPage = totalPages;
-
-                    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-                    const endIndex = startIndex + ITEMS_PER_PAGE;
-                    const visiblePageRows = new Set(matchingRows.slice(startIndex, endIndex));
-
-                    const visibleDepts = new Set();
-                    allEmpRows.forEach(row => {{
-                        if (visiblePageRows.has(row)) {{
-                            row.style.display = "";
-                            visibleDepts.add(row.getAttribute("data-dept"));
-                        }} else {{
-                            row.style.display = "none";
-                        }}
-                    }});
-
-                    allDeptHeaders.forEach(header => {{
-                        const hDept = header.getAttribute("data-dept");
-                        header.style.display = visibleDepts.has(hDept) ? "" : "none";
-                    }});
-
-                    if (noResultRow) {{
-                        noResultRow.style.display = (allEmpRows.length > 0 && totalItems === 0) ? "" : "none";
-                    }}
-                    if (filterCounter) {{
-                        filterCounter.textContent = totalItems + " employé(s)";
-                    }}
-                    if (paginationInfo) {{
-                        if (totalItems === 0) {{
-                            paginationInfo.textContent = "Affichage 0 - 0 sur 0";
-                        }} else {{
-                            const showFrom = startIndex + 1;
-                            const showTo = Math.min(endIndex, totalItems);
-                            paginationInfo.textContent = `Affichage ${{showFrom}} - ${{showTo}} sur ${{totalItems}}`;
-                        }}
-                    }}
-
-                    if (paginationControls) {{
-                        paginationControls.innerHTML = "";
-                        if (totalItems > ITEMS_PER_PAGE) {{
-                            const createPageItem = (label, pageNum, disabled = false, active = false) => {{
-                                const li = document.createElement("li");
-                                li.className = "page-item" + (disabled ? " disabled" : "") + (active ? " active" : "");
-                                const a = document.createElement("a");
-                                a.className = "page-link";
-                                a.href = "#";
-                                a.innerHTML = label;
-                                a.addEventListener("click", function(e) {{
-                                    e.preventDefault();
-                                    if (!disabled && !active) {{
-                                        currentPage = pageNum;
-                                        updateEmployeesTable();
-                                    }}
-                                }});
-                                li.appendChild(a);
-                                return li;
-                            }};
-
-                            paginationControls.appendChild(createPageItem("&laquo;", currentPage - 1, currentPage === 1));
-
-                            for (let p = 1; p <= totalPages; p++) {{
-                                paginationControls.appendChild(createPageItem(String(p), p, false, p === currentPage));
-                            }}
-
-                            paginationControls.appendChild(createPageItem("&raquo;", currentPage + 1, currentPage === totalPages));
-                        }}
-                    }}
-                }}
-
-                if (searchInput) {{
-                    searchInput.addEventListener("input", function() {{
-                        currentPage = 1;
-                        updateEmployeesTable();
-                    }});
-                }}
-                if (clearSearchBtn) {{
-                    clearSearchBtn.addEventListener("click", function() {{
-                        searchInput.value = "";
-                        currentPage = 1;
-                        updateEmployeesTable();
-                    }});
-                }}
-                if (deptFilter) {{
-                    deptFilter.addEventListener("change", function() {{
-                        currentPage = 1;
-                        updateEmployeesTable();
-                    }});
-                }}
-
-                updateEmployeesTable();
-            }});
-        </script>
     </body>
     </html>
     """
     return HTMLResponse(content=html_content)
 
+
 # --- ROUTE IMPORTATION D'EMPLOYÉS (EXCEL / CSV) ---
 @app.post("/employees/import")
-async def import_employees(file: UploadFile = File(...), drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def import_employees(file: UploadFile = File(...), drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    conn = None
     try:
         contents = await file.read()
         filename = file.filename.lower()
@@ -910,7 +672,7 @@ async def import_employees(file: UploadFile = File(...), drh_session: str = Cook
 
         if not col_badge or not col_nom:
             return RedirectResponse(
-                url="/?error=Le+fichier+doit+contenir+au+moins+les+colonnes+matricule+(ou+badge)+et+nom", 
+                url="/?error=Le+fichier+doit+contenir+au+moins+les+colonnes+matricule+(ou+badge)+et+nom",
                 status_code=303
             )
 
@@ -928,15 +690,14 @@ async def import_employees(file: UploadFile = File(...), drh_session: str = Cook
 
                 cursor.execute(
                     """
-                    INSERT INTO employees (badge_or_card_id, first_name, last_name, department, company_id, is_active)
-                    VALUES (%s, %s, %s, %s, %s, TRUE)
-                    ON CONFLICT (badge_or_card_id) DO UPDATE 
-                    SET first_name = EXCLUDED.first_name, 
-                        last_name = EXCLUDED.last_name, 
-                        department = EXCLUDED.department,
-                        company_id = EXCLUDED.company_id
+                    INSERT INTO employees (badge_or_card_id, first_name, last_name, department, is_active)
+                    VALUES (%s, %s, %s, %s, TRUE)
+                    ON CONFLICT (badge_or_card_id) DO UPDATE
+                    SET first_name = EXCLUDED.first_name,
+                        last_name = EXCLUDED.last_name,
+                        department = EXCLUDED.department
                     """,
-                    (badge_val, prenom_val, nom_val, dept_val, company_id)
+                    (badge_val, prenom_val, nom_val, dept_val)
                 )
                 imported_count += 1
             conn.commit()
@@ -945,6 +706,12 @@ async def import_employees(file: UploadFile = File(...), drh_session: str = Cook
         return RedirectResponse(url=f"/?success={imported_count}+employé(s)+importé(s)+avec+succès", status_code=303)
 
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de l'importation Excel : {e}")
         return RedirectResponse(url=f"/?error=Erreur+de+lecture+du+fichier:+{str(e)}", status_code=303)
 
@@ -956,177 +723,208 @@ async def add_schedule(
     start_time: str = Form(...),
     end_time: str = Form(...),
     late_tolerance_minutes: int = Form(30),
-    drh_session: str = Cookie(None),
-    company_id: str = Cookie("1")
+    drh_session: str = Cookie(None)
 ):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO work_schedules (company_id, name, start_time, end_time, late_tolerance_minutes)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (company_id, name.strip(), start_time, end_time, late_tolerance_minutes))
+                INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
+                VALUES (%s, %s, %s, %s)
+            """, (name.strip(), start_time, end_time, late_tolerance_minutes))
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur ajout horaire : {e}")
     return RedirectResponse(url="/", status_code=303)
 
+
 @app.get("/schedules/delete/{sched_id}")
-async def delete_schedule(sched_id: int, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def delete_schedule(sched_id: int, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM employee_schedules WHERE schedule_id = %s", (sched_id,))
-            cursor.execute("DELETE FROM work_schedules WHERE id = %s AND company_id = %s", (sched_id, company_id))
+            cursor.execute("UPDATE employees SET schedule_id = NULL WHERE schedule_id = %s", (sched_id,))
+            cursor.execute("DELETE FROM work_schedules WHERE id = %s", (sched_id,))
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur suppression horaire : {e}")
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/devices/add")
-async def add_device_manual(device_key: str = Form(...), friendly_name: str = Form(...), drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def add_device_manual(device_key: str = Form(...), friendly_name: str = Form(...), drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO devices_mapping (device_key, friendly_name, company_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (device_key) DO UPDATE SET friendly_name = EXCLUDED.friendly_name, company_id = EXCLUDED.company_id
-            """, (device_key.strip(), friendly_name.strip(), company_id))
+                INSERT INTO devices_mapping (device_key, friendly_name)
+                VALUES (%s, %s)
+                ON CONFLICT (device_key) DO UPDATE SET friendly_name = EXCLUDED.friendly_name
+            """, (device_key.strip(), friendly_name.strip()))
             conn.commit()
         conn.close()
         return RedirectResponse(url="/?success=Terminal+ajouté+avec+succès", status_code=303)
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur ajout manuel terminal : {e}")
         return RedirectResponse(url=f"/?error=Erreur+lors+de+l'ajout+du+terminal:+{str(e)}", status_code=303)
 
+
 @app.post("/devices/rename")
-async def rename_device(device_key: str = Form(...), friendly_name: str = Form(...), drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def rename_device(device_key: str = Form(...), friendly_name: str = Form(...), drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO devices_mapping (device_key, friendly_name, company_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (device_key) DO UPDATE SET friendly_name = EXCLUDED.friendly_name, company_id = EXCLUDED.company_id
-            """, (device_key.strip(), friendly_name.strip(), company_id))
+                INSERT INTO devices_mapping (device_key, friendly_name)
+                VALUES (%s, %s)
+                ON CONFLICT (device_key) DO UPDATE SET friendly_name = EXCLUDED.friendly_name
+            """, (device_key.strip(), friendly_name.strip()))
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors du renommage du terminal : {e}")
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/devices/delete/{device_key}")
-async def delete_device(device_key: str, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def delete_device(device_key: str, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM devices_mapping WHERE device_key = %s AND company_id = %s", (device_key, company_id))
-            cursor.execute("DELETE FROM attendance_raw_logs WHERE device_id = %s AND company_id = %s", (device_key, company_id))
+            cursor.execute("DELETE FROM devices_mapping WHERE device_key = %s", (device_key,))
+            cursor.execute("DELETE FROM attendance_raw_logs WHERE device_id = %s", (device_key,))
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la suppression du terminal : {e}")
 
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/reports/delete/{log_id}")
-async def delete_attendance_log(log_id: int, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def delete_attendance_log(log_id: int, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM attendance_raw_logs WHERE id = %s AND company_id = %s", (log_id, company_id))
+            cursor.execute("DELETE FROM attendance_raw_logs WHERE id = %s", (log_id,))
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la suppression du pointage : {e}")
 
     return RedirectResponse(url="/reports", status_code=303)
 
 
 @app.get("/reports", response_class=HTMLResponse)
-async def attendance_reports(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def attendance_reports(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
     reports = []
     devices = []
+    mappings = {}
     today_str = date.today().isoformat()
-    
+
     if not start_date:
         start_date = today_str
     if not end_date:
         end_date = today_str
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM devices_mapping WHERE company_id = %s", (company_id,))
+            cursor.execute("SELECT * FROM devices_mapping")
             mappings = {row['device_key']: row['friendly_name'] for row in cursor.fetchall()}
 
-            cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL AND company_id = %s ORDER BY device_id", (company_id,))
+            cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL ORDER BY device_id")
             devices = [{"key": row['device_id'], "name": mappings.get(row['device_id'], row['device_id'])} for row in cursor.fetchall()]
 
-            # Récupérer tous les horaires disponibles pour l'entreprise
-            cursor.execute("SELECT * FROM work_schedules WHERE company_id = %s ORDER BY id ASC", (company_id,))
-            all_schedules = cursor.fetchall()
-
-            # Récupérer la cartographie des horaires assignés par employé
-            cursor.execute("""
-                SELECT es.badge_or_card_id, s.*
-                FROM employee_schedules es
-                JOIN work_schedules s ON es.schedule_id = s.id
-                WHERE s.company_id = %s
-            """, (company_id,))
-            emp_schedules_map = {}
-            for row in cursor.fetchall():
-                b_id = row['badge_or_card_id']
-                if b_id not in emp_schedules_map:
-                    emp_schedules_map[b_id] = []
-                emp_schedules_map[b_id].append(row)
-
             base_query = """
-                SELECT 
+                SELECT
                     l.id,
                     l.badge_or_card_id,
                     COALESCE(e.first_name, 'Inconnu') as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     COALESCE(e.department, '-') as department,
+                    s.start_time as schedule_start,
+                    s.end_time as schedule_end,
+                    s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as punch_date,
                     l.punch_timestamp as exact_punch,
                     l.device_id
                 FROM attendance_raw_logs l
-                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id AND e.company_id = l.company_id
-                WHERE l.company_id = %s AND DATE(l.punch_timestamp) BETWEEN %s AND %s
+                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
+                LEFT JOIN work_schedules s ON e.schedule_id = s.id
+                WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
             """
-            
-            params = [company_id, start_date, end_date]
-            
+
+            params = [start_date, end_date]
+
             if device_id and device_id != "ALL":
                 base_query += " AND l.device_id = %s"
                 params.append(device_id)
 
             base_query += " ORDER BY l.punch_timestamp DESC"
-            
+
             cursor.execute(base_query, tuple(params))
             raw_logs = cursor.fetchall()
 
@@ -1138,6 +936,9 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                         "badge_or_card_id": r['badge_or_card_id'],
                         "first_name": r['first_name'],
                         "last_name": r['last_name'],
+                        "schedule_start": r['schedule_start'] or time(8, 0),
+                        "schedule_end": r['schedule_end'] or time(17, 0),
+                        "late_tolerance_minutes": r['late_tolerance_minutes'] if r['late_tolerance_minutes'] is not None else 30,
                         "punch_date": r['punch_date'],
                         "device_id": r['device_id'],
                         "timestamps": []
@@ -1148,22 +949,17 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                 sorted_ts = sorted(data["timestamps"], key=lambda x: x[1])
                 check_in_item = sorted_ts[0]
                 check_out_item = sorted_ts[-1] if len(sorted_ts) > 1 else None
-                check_in_dt = check_in_item[1]
-
-                assigned_for_emp = emp_schedules_map.get(data["badge_or_card_id"], [])
-                best_sched = get_best_matching_schedule(check_in_dt, assigned_for_emp, all_schedules)
 
                 reports.append({
                     "badge_or_card_id": data["badge_or_card_id"],
                     "first_name": data["first_name"],
                     "last_name": data["last_name"],
-                    "schedule_name": best_sched.get('name', 'Standard'),
-                    "schedule_start": best_sched['start_time'],
-                    "schedule_end": best_sched['end_time'],
-                    "late_tolerance_minutes": best_sched.get('late_tolerance_minutes', 30),
+                    "schedule_start": data["schedule_start"],
+                    "schedule_end": data["schedule_end"],
+                    "late_tolerance_minutes": data["late_tolerance_minutes"],
                     "punch_date": data["punch_date"],
                     "check_in_id": check_in_item[0],
-                    "check_in": check_in_dt,
+                    "check_in": check_in_item[1],
                     "check_out_id": check_out_item[0] if check_out_item else None,
                     "check_out": check_out_item[1] if check_out_item else None,
                     "device_id": data["device_id"]
@@ -1171,6 +967,12 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
 
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la génération du rapport : {e}")
 
     report_rows_html = ""
@@ -1181,7 +983,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             check_out = row['check_out']
             raw_dev = row.get('device_id', '-')
             dev_display = mappings.get(raw_dev, raw_dev) if raw_dev in mappings else raw_dev
-            
+
             check_in_str = str(check_in).split(' ')[1] if check_in else '-'
             check_out_str = str(check_out).split(' ')[1] if check_out else '-'
 
@@ -1190,6 +992,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
             tolerance = row['late_tolerance_minutes']
+            p_date = row['punch_date'] if isinstance(row['punch_date'], date) else date.today()
 
             if not check_in or not check_out or check_in == check_out:
                 report_rows_html += f"""
@@ -1197,7 +1000,6 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                 <td><strong>{row['punch_date']}</strong></td>
                                 <td><code>{row['badge_or_card_id']}</code></td>
                                 <td class="text-start ps-4 fw-semibold">{emp_name}</td>
-                                <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{row['schedule_name']}</span></td>
                                 <td><span class="badge bg-danger text-white">Retard/Manquant ({check_in_str})</span></td>
                                 <td><span class="text-muted fst-italic">Manquant</span></td>
                                 <td>-</td>
@@ -1218,8 +1020,8 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             minutes = (total_seconds % 3600) // 60
             work_duration = f"{hours}h {minutes:02d}m"
 
-            max_arrival_dt = datetime.combine(date.today(), sched_start) + timedelta(minutes=tolerance)
-            is_arrival_valid = check_in.time() <= max_arrival_dt.time()
+            max_arrival_dt = datetime.combine(p_date, sched_start) + timedelta(minutes=tolerance)
+            is_arrival_valid = check_in <= max_arrival_dt
             is_departure_valid = check_out_t >= sched_end
 
             if is_arrival_valid:
@@ -1242,7 +1044,6 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                 <td><strong>{row['punch_date']}</strong></td>
                                 <td><code>{row['badge_or_card_id']}</code></td>
                                 <td class="text-start ps-4 fw-semibold">{emp_name}</td>
-                                <td><span class="badge bg-info bg-opacity-10 text-dark border border-info">{row['schedule_name']}</span></td>
                                 <td>{arr_badge}</td>
                                 <td>{dep_badge}</td>
                                 <td><strong>{work_duration}</strong></td>
@@ -1256,7 +1057,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
     else:
         report_rows_html = """
                             <tr>
-                                <td colspan="10" class="text-center py-4 text-muted">Aucun pointage trouvé pour cette période.</td>
+                                <td colspan="9" class="text-center py-4 text-muted">Aucun pointage trouvé pour cette période.</td>
                             </tr>
         """
 
@@ -1398,7 +1199,6 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                     <th>Date</th>
                                     <th>Matricule</th>
                                     <th class="text-start ps-4">Employé</th>
-                                    <th>Horaire / Shift</th>
                                     <th>Arrivée</th>
                                     <th>Départ</th>
                                     <th>Heures</th>
@@ -1423,7 +1223,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
 
 # --- ROUTE D'EXPORTATION EXCEL DU RAPPORT JOURNALIER ---
 @app.get("/reports/export/excel")
-async def export_reports_excel(start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def export_reports_excel(start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
@@ -1431,42 +1231,31 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
     start_date = start_date or today_str
     end_date = end_date or today_str
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM devices_mapping WHERE company_id = %s", (company_id,))
+            cursor.execute("SELECT * FROM devices_mapping")
             mappings = {row['device_key']: row['friendly_name'] for row in cursor.fetchall()}
 
-            cursor.execute("SELECT * FROM work_schedules WHERE company_id = %s ORDER BY id ASC", (company_id,))
-            all_schedules = cursor.fetchall()
-
-            cursor.execute("""
-                SELECT es.badge_or_card_id, s.*
-                FROM employee_schedules es
-                JOIN work_schedules s ON es.schedule_id = s.id
-                WHERE s.company_id = %s
-            """, (company_id,))
-            emp_schedules_map = {}
-            for row in cursor.fetchall():
-                b_id = row['badge_or_card_id']
-                if b_id not in emp_schedules_map:
-                    emp_schedules_map[b_id] = []
-                emp_schedules_map[b_id].append(row)
-
             base_query = """
-                SELECT 
+                SELECT
                     l.badge_or_card_id,
                     COALESCE(e.first_name, 'Inconnu') as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     COALESCE(e.department, '-') as department,
+                    s.start_time as schedule_start,
+                    s.end_time as schedule_end,
+                    s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as punch_date,
                     l.punch_timestamp as exact_punch,
                     l.device_id
                 FROM attendance_raw_logs l
-                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id AND e.company_id = l.company_id
-                WHERE l.company_id = %s AND DATE(l.punch_timestamp) BETWEEN %s AND %s
+                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
+                LEFT JOIN work_schedules s ON e.schedule_id = s.id
+                WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
             """
-            params = [company_id, start_date, end_date]
+            params = [start_date, end_date]
             if device_id and device_id != "ALL":
                 base_query += " AND l.device_id = %s"
                 params.append(device_id)
@@ -1490,9 +1279,6 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
             cin = sorted_ts[0]
             cout = sorted_ts[-1] if len(sorted_ts) > 1 else None
 
-            assigned_scheds = emp_schedules_map.get(r['badge_or_card_id'], [])
-            best_sched = get_best_matching_schedule(cin, assigned_scheds, all_schedules)
-
             cin_str = str(cin).split(' ')[1] if cin else '-'
             cout_str = str(cout).split(' ')[1] if cout else '-'
             emp_name = f"{r['first_name']} {r['last_name']}".strip()
@@ -1514,7 +1300,6 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
                 "Matricule": r['badge_or_card_id'],
                 "Employé": emp_name,
                 "Département": r['department'],
-                "Horaire Appliqué": best_sched.get('name', 'Standard'),
                 "Arrivée": cin_str,
                 "Départ": cout_str,
                 "Heures Travaillées": work_duration,
@@ -1530,69 +1315,64 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
 
         filename = f"Rapport_Pointage_{start_date}_au_{end_date}.xlsx"
         return StreamingResponse(
-            output, 
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur export Excel : {e}")
         return RedirectResponse(url="/reports", status_code=303)
 
 
 @app.get("/summary", response_class=HTMLResponse)
-async def attendance_summary(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def attendance_summary(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
     summary_rows = []
     today_str = date.today().isoformat()
-    
+
     if not start_date:
         start_date = today_str
     if not end_date:
         end_date = today_str
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM work_schedules WHERE company_id = %s ORDER BY id ASC", (company_id,))
-            all_schedules = cursor.fetchall()
-
-            cursor.execute("""
-                SELECT es.badge_or_card_id, s.*
-                FROM employee_schedules es
-                JOIN work_schedules s ON es.schedule_id = s.id
-                WHERE s.company_id = %s
-            """, (company_id,))
-            emp_schedules_map = {}
-            for row in cursor.fetchall():
-                b_id = row['badge_or_card_id']
-                if b_id not in emp_schedules_map:
-                    emp_schedules_map[b_id] = []
-                emp_schedules_map[b_id].append(row)
-
             query = """
-                SELECT 
+                SELECT
                     COALESCE(e.first_name, 'Inconnu') as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     l.badge_or_card_id,
+                    s.start_time as schedule_start,
+                    s.end_time as schedule_end,
+                    s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as p_date,
                     MIN(l.punch_timestamp) as check_in,
                     MAX(l.punch_timestamp) as check_out
                 FROM attendance_raw_logs l
-                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id AND e.company_id = l.company_id
-                WHERE l.company_id = %s AND DATE(l.punch_timestamp) BETWEEN %s AND %s
-                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name
+                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
+                LEFT JOIN work_schedules s ON e.schedule_id = s.id
+                WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
+                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
             """
-            cursor.execute(query, (company_id, start_date, end_date))
+            cursor.execute(query, (start_date, end_date))
             raw_logs = cursor.fetchall()
-            
+
             emp_stats = {}
             for row in raw_logs:
                 badge = row['badge_or_card_id']
                 name = f"{row['first_name']} {row['last_name']}".strip()
-                
+
                 if badge not in emp_stats:
                     emp_stats[badge] = {
                         "name": name,
@@ -1601,27 +1381,25 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                         "absent_days": 0,
                         "total_seconds": 0
                     }
-                
+
                 cin = row['check_in']
                 cout = row['check_out']
-                
-                assigned_scheds = emp_schedules_map.get(badge, [])
-                best_sched = get_best_matching_schedule(cin, assigned_scheds, all_schedules)
-                sched_start = best_sched['start_time']
-                tolerance = best_sched.get('late_tolerance_minutes', 30)
+                sched_start = row['schedule_start'] or time(8, 0)
+                tolerance = row['late_tolerance_minutes'] if row['late_tolerance_minutes'] is not None else 30
+                p_date = row['p_date'] if isinstance(row['p_date'], date) else date.today()
 
                 if not cin or not cout or cin == cout:
                     emp_stats[badge]["absent_days"] += 1
                 else:
-                    max_arrival_dt = datetime.combine(row['p_date'], sched_start) + timedelta(minutes=tolerance)
+                    max_arrival_dt = datetime.combine(p_date, sched_start) + timedelta(minutes=tolerance)
                     is_arr_valid = cin <= max_arrival_dt
-                    
+
                     if is_arr_valid:
                         emp_stats[badge]["present_days"] += 1
                     else:
                         emp_stats[badge]["late_days"] += 1
                         emp_stats[badge]["present_days"] += 1
-                        
+
                     duration = cout - cin
                     if duration.total_seconds() > 0:
                         emp_stats[badge]["total_seconds"] += int(duration.total_seconds())
@@ -1640,9 +1418,15 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                     "absent_days": data["absent_days"],
                     "worked_hours": formatted_hours
                 })
-                
+
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la génération du rapport de synthèse : {e}")
 
     summary_table_rows = ""
@@ -1810,7 +1594,7 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
 
 # --- ROUTE D'EXPORTATION EXCEL DE LA SYNTHÈSE ---
 @app.get("/summary/export/excel")
-async def export_summary_excel(start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def export_summary_excel(start_date: str = None, end_date: str = None, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
@@ -1818,39 +1602,28 @@ async def export_summary_excel(start_date: str = None, end_date: str = None, drh
     start_date = start_date or today_str
     end_date = end_date or today_str
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM work_schedules WHERE company_id = %s ORDER BY id ASC", (company_id,))
-            all_schedules = cursor.fetchall()
-
-            cursor.execute("""
-                SELECT es.badge_or_card_id, s.*
-                FROM employee_schedules es
-                JOIN work_schedules s ON es.schedule_id = s.id
-                WHERE s.company_id = %s
-            """, (company_id,))
-            emp_schedules_map = {}
-            for row in cursor.fetchall():
-                b_id = row['badge_or_card_id']
-                if b_id not in emp_schedules_map:
-                    emp_schedules_map[b_id] = []
-                emp_schedules_map[b_id].append(row)
-
             query = """
-                SELECT 
+                SELECT
                     COALESCE(e.first_name, 'Inconnu') as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     l.badge_or_card_id,
+                    s.start_time as schedule_start,
+                    s.end_time as schedule_end,
+                    s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as p_date,
                     MIN(l.punch_timestamp) as check_in,
                     MAX(l.punch_timestamp) as check_out
                 FROM attendance_raw_logs l
-                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id AND e.company_id = l.company_id
-                WHERE l.company_id = %s AND DATE(l.punch_timestamp) BETWEEN %s AND %s
-                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name
+                LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
+                LEFT JOIN work_schedules s ON e.schedule_id = s.id
+                WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
+                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
             """
-            cursor.execute(query, (company_id, start_date, end_date))
+            cursor.execute(query, (start_date, end_date))
             raw_logs = cursor.fetchall()
         conn.close()
 
@@ -1870,16 +1643,14 @@ async def export_summary_excel(start_date: str = None, end_date: str = None, drh
 
             cin = row['check_in']
             cout = row['check_out']
-
-            assigned_scheds = emp_schedules_map.get(badge, [])
-            best_sched = get_best_matching_schedule(cin, assigned_scheds, all_schedules)
-            sched_start = best_sched['start_time']
-            tolerance = best_sched.get('late_tolerance_minutes', 30)
+            sched_start = row['schedule_start'] or time(8, 0)
+            tolerance = row['late_tolerance_minutes'] if row['late_tolerance_minutes'] is not None else 30
+            p_date = row['p_date'] if isinstance(row['p_date'], date) else date.today()
 
             if not cin or not cout or cin == cout:
                 emp_stats[badge]["absent_days"] += 1
             else:
-                max_arr = datetime.combine(row['p_date'], sched_start) + timedelta(minutes=tolerance)
+                max_arr = datetime.combine(p_date, sched_start) + timedelta(minutes=tolerance)
                 if cin <= max_arr:
                     emp_stats[badge]["present_days"] += 1
                 else:
@@ -1911,124 +1682,130 @@ async def export_summary_excel(start_date: str = None, end_date: str = None, drh
 
         filename = f"Synthese_Presence_{start_date}_au_{end_date}.xlsx"
         return StreamingResponse(
-            output, 
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur export Synthèse Excel : {e}")
         return RedirectResponse(url="/summary", status_code=303)
 
 
 @app.post("/employees/add")
 async def add_employee(
-    request: Request,
     badge_or_card_id: str = Form(...),
     first_name: str = Form(...),
     last_name: str = Form(...),
     department: str = Form(None),
-    drh_session: str = Cookie(None),
-    company_id: str = Cookie("1")
+    schedule_id: int = Form(None),
+    drh_session: str = Cookie(None)
 ):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
-    form_data = await request.form()
-    schedule_ids = form_data.getlist("schedule_ids")
-
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO employees (badge_or_card_id, first_name, last_name, department, company_id, is_active)
+                INSERT INTO employees (badge_or_card_id, first_name, last_name, department, schedule_id, is_active)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (badge_or_card_id) DO UPDATE
+                SET first_name = EXCLUDED.first_name,
+                    last_name = EXCLUDED.last_name,
+                    department = EXCLUDED.department,
+                    schedule_id = EXCLUDED.schedule_id,
+                    is_active = EXCLUDED.is_active
                 """,
                 (
-                    badge_or_card_id.strip(), 
-                    first_name.strip(), 
-                    last_name.strip(), 
+                    badge_or_card_id.strip(),
+                    first_name.strip(),
+                    last_name.strip(),
                     department.strip() if department else None,
-                    company_id,
+                    schedule_id,
                     True
                 )
             )
-            
-            # Insérer les horaires multiples attribués
-            for s_id in schedule_ids:
-                cursor.execute(
-                    """
-                    INSERT INTO employee_schedules (badge_or_card_id, schedule_id)
-                    VALUES (%s, %s) ON CONFLICT DO NOTHING
-                    """,
-                    (badge_or_card_id.strip(), int(s_id))
-                )
-
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de l'ajout de l'employé : {e}")
 
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/employees/delete/{badge_id}")
-async def delete_employee(badge_id: str, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def delete_employee(badge_id: str, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM employee_schedules WHERE badge_or_card_id = %s", (badge_id,))
-            cursor.execute("DELETE FROM employees WHERE badge_or_card_id = %s AND company_id = %s", (badge_id, company_id))
+            cursor.execute("DELETE FROM attendance_raw_logs WHERE badge_or_card_id = %s", (badge_id,))
+            cursor.execute("DELETE FROM employees WHERE badge_or_card_id = %s", (badge_id,))
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la suppression de l'employé : {e}")
 
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/employees/edit/{badge_id}", response_class=HTMLResponse)
-async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None), company_id: str = Cookie("1")):
+async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
     employee = None
     schedules = []
-    assigned_sched_ids = set()
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM employees WHERE badge_or_card_id = %s AND company_id = %s", (badge_id, company_id))
+            cursor.execute("SELECT * FROM employees WHERE badge_or_card_id = %s", (badge_id,))
             employee = cursor.fetchone()
-            
-            cursor.execute("SELECT * FROM work_schedules WHERE company_id = %s ORDER BY id ASC", (company_id,))
+
+            cursor.execute("SELECT * FROM work_schedules ORDER BY id ASC")
             schedules = cursor.fetchall()
-
-            cursor.execute("SELECT schedule_id FROM employee_schedules WHERE badge_or_card_id = %s", (badge_id,))
-            assigned_sched_ids = {row['schedule_id'] for row in cursor.fetchall()}
-
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la récupération de l'employé : {e}")
 
     if not employee:
         return RedirectResponse(url="/", status_code=303)
 
-    sched_checkboxes_html = ""
+    sched_options_html = ""
     for s in schedules:
-        checked = 'checked' if s['id'] in assigned_sched_ids else ''
-        sched_checkboxes_html += f"""
-            <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" name="schedule_ids" value="{s['id']}" id="edit_sched_{s['id']}" {checked}>
-                <label class="form-check-label small" for="edit_sched_{s['id']}">
-                    <strong>{s['name']}</strong> ({str(s['start_time'])[:5]} - {str(s['end_time'])[:5]})
-                </label>
-            </div>
-        """
+        sel = 'selected' if employee.get('schedule_id') == s['id'] else ''
+        sched_options_html += f'<option value="{s["id"]}" {sel}>{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
 
     html_content = f"""
     <!DOCTYPE html>
@@ -2043,14 +1820,6 @@ async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None), com
             body {{ background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
             .navbar {{ background: linear-gradient(135deg, #1e293b, #0f172a) !important; }}
             .card {{ border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }}
-            .schedule-box {{
-                max-height: 150px;
-                overflow-y: auto;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 8px;
-                background-color: #fafafa;
-            }}
         </style>
     </head>
     <body>
@@ -2085,10 +1854,10 @@ async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None), com
                             <input type="text" class="form-control" name="department" value="{employee.get('department') or ''}">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-secondary small fw-bold">Horaires & Shifts assignés (Choix multiple)</label>
-                            <div class="schedule-box">
-                                {sched_checkboxes_html if sched_checkboxes_html else '<span class="text-muted small">Aucun horaire créé.</span>'}
-                            </div>
+                            <label class="form-label text-secondary small fw-bold">Horaire de travail</label>
+                            <select class="form-select" name="schedule_id">
+                                {sched_options_html}
+                            </select>
                         </div>
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="is_active" name="is_active" value="true" {'checked' if employee.get('is_active') else ''}>
@@ -2110,59 +1879,48 @@ async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None), com
 
 @app.post("/employees/update/{old_badge_id}")
 async def update_employee(
-    request: Request,
     old_badge_id: str,
     badge_or_card_id: str = Form(...),
     first_name: str = Form(...),
     last_name: str = Form(...),
     department: str = Form(None),
+    schedule_id: int = Form(None),
     is_active: str = Form(None),
-    drh_session: str = Cookie(None),
-    company_id: str = Cookie("1")
+    drh_session: str = Cookie(None)
 ):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
-    form_data = await request.form()
-    schedule_ids = form_data.getlist("schedule_ids")
     is_active_bool = True if is_active == "true" else False
-
-    new_badge = badge_or_card_id.strip()
-
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                UPDATE employees 
-                SET badge_or_card_id = %s, first_name = %s, last_name = %s, department = %s, is_active = %s
-                WHERE badge_or_card_id = %s AND company_id = %s
+                UPDATE employees
+                SET badge_or_card_id = %s, first_name = %s, last_name = %s, department = %s, schedule_id = %s, is_active = %s
+                WHERE badge_or_card_id = %s
                 """,
                 (
-                    new_badge,
+                    badge_or_card_id.strip(),
                     first_name.strip(),
                     last_name.strip(),
                     department.strip() if department else None,
+                    schedule_id,
                     is_active_bool,
-                    old_badge_id,
-                    company_id
+                    old_badge_id
                 )
             )
-
-            # Re-créer les horaires multiples
-            cursor.execute("DELETE FROM employee_schedules WHERE badge_or_card_id = %s", (new_badge,))
-            for s_id in schedule_ids:
-                cursor.execute(
-                    """
-                    INSERT INTO employee_schedules (badge_or_card_id, schedule_id)
-                    VALUES (%s, %s) ON CONFLICT DO NOTHING
-                    """,
-                    (new_badge, int(s_id))
-                )
-
             conn.commit()
         conn.close()
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur lors de la mise à jour de l'employé : {e}")
 
     return RedirectResponse(url="/", status_code=303)
@@ -2170,10 +1928,11 @@ async def update_employee(
 
 @app.post("/api/v1/attendance-webhook")
 async def receive_attendance(request: Request):
+    conn = None
     try:
         body = await request.body()
         raw_text = body.decode("utf-8", errors="ignore")
-        
+
         print("=== REQUÊTE HIKVISION REÇUE ===")
         print(raw_text)
         print("================================")
@@ -2182,20 +1941,18 @@ async def receive_attendance(request: Request):
         device_id = None
         punch_type = "IN"
 
-        # 1. Priorité au paramètre d'URL ?dev=... et ?company=...
         query_dev = request.query_params.get("dev")
         if query_dev:
             device_id = f"Terminal_{query_dev.strip()}"
 
-        company_slug = request.query_params.get("company")
-
         try:
             data = json.loads(raw_text)
+
             def find_key(obj, key):
                 if isinstance(obj, dict):
                     if key in obj and obj[key]:
                         return str(obj[key]).strip()
-                    for k, v in obj.items():
+                    for _, v in obj.items():
                         res = find_key(v, key)
                         if res:
                             return res
@@ -2221,7 +1978,6 @@ async def receive_attendance(request: Request):
         except Exception:
             pass
 
-        # Fallback Regex pour XML ou JSON non standard
         if not device_id:
             for dev_pattern in [
                 r'"(?:serialNo|serialNumber|deviceID|deviceSerialNo|macAddress)"\s*[:=]\s*["\']?([^"\'<>,\s]+)["\']?',
@@ -2234,7 +1990,7 @@ async def receive_attendance(request: Request):
 
         if employee_no == "UNKNOWN":
             for pattern in [
-               r'"(?:employeeNoString|employeeNo|cardNo|employeeID)"\s*[:=]\s*["\']?([^"\'<>,\s]+)["\']?',
+                r'"(?:employeeNoString|employeeNo|cardNo|employeeID)"\s*[:=]\s*["\']?([^"\'<>,\s]+)["\']?',
                 r'<employeeNoString>([^<]+)</employeeNoString>',
                 r'<employeeNo>([^<]+)</employeeNo>',
                 r'<cardNo>([^<]+)</cardNo>'
@@ -2255,42 +2011,26 @@ async def receive_attendance(request: Request):
                 client_host = request.client.host if request.client else "UNKNOWN_IP"
             device_id = f"IP_{client_host}"
 
+        print(f"-> Pointage validé | Matricule : {employee_no} | Appareil : {device_id}")
+
         local_punch_time = datetime.now(ZoneInfo("Africa/Kinshasa")).replace(tzinfo=None)
 
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            company_id = None
-            if company_slug:
-                cursor.execute("SELECT id FROM companies WHERE slug = %s", (company_slug.strip(),))
-                comp_res = cursor.fetchone()
-                if comp_res:
-                    company_id = comp_res['id']
-
-            if not company_id and device_id:
-                cursor.execute("SELECT company_id FROM devices_mapping WHERE device_key = %s", (device_id,))
-                dev_res = cursor.fetchone()
-                if dev_res and dev_res.get('company_id'):
-                    company_id = dev_res['company_id']
-
-            if not company_id:
-                company_id = 1
-
-            print(f"-> Pointage validé | Entreprise ID : {company_id} | Matricule : {employee_no} | Appareil : {device_id}")
-
             cursor.execute(
                 """
-                INSERT INTO devices_mapping (device_key, friendly_name, company_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO devices_mapping (device_key, friendly_name)
+                VALUES (%s, %s)
                 ON CONFLICT (device_key) DO NOTHING
                 """,
-                (device_id, device_id, company_id)
+                (device_id, device_id)
             )
             cursor.execute(
                 """
-                INSERT INTO attendance_raw_logs (badge_or_card_id, punch_timestamp, device_id, punch_type, company_id)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO attendance_raw_logs (badge_or_card_id, punch_timestamp, device_id, punch_type)
+                VALUES (%s, %s, %s, %s)
                 """,
-                (employee_no, local_punch_time, device_id, punch_type, company_id)
+                (employee_no, local_punch_time, device_id, punch_type)
             )
             conn.commit()
         conn.close()
@@ -2298,5 +2038,11 @@ async def receive_attendance(request: Request):
         return Response(content="<Response><statusString>OK</statusString></Response>", media_type="application/xml", status_code=200)
 
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
         print(f"Erreur critique webhook : {e}")
         return Response(content=f"<Response><statusString>ERROR: {str(e)}</statusString></Response>", media_type="application/xml", status_code=500)
