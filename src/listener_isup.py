@@ -16,6 +16,310 @@ from database.db_config import get_db_connection
 
 app = FastAPI(title="Hikvision Attendance System")
 
+TRANSLATIONS = {
+    "fr": {
+        "login_title": "Connexion DRH - Hikvision",
+        "login_heading": "Espace DRH",
+        "login_subtitle": "Veuillez vous connecter pour accéder au suivi",
+        "username": "Nom d'utilisateur",
+        "password": "Mot de passe",
+        "login_btn": "Se connecter",
+        "invalid_creds": "Identifiants+incorrects",
+        "dev_by": "Application développée par",
+        "nav_brand": "Suivi de Présence & Pointage Hikvision",
+        "nav_dashboard": "Tableau de bord",
+        "nav_reports": "Rapport Journalier",
+        "nav_summary": "Synthèse Employés",
+        "nav_logout": "Déconnexion",
+        "kpi_employees": "Employés Enregistrés",
+        "kpi_status": "Statut du Système",
+        "kpi_online": "En ligne 🟢",
+        "kpi_devices": "Terminaux Connectés",
+        "detected": "détecté(s)",
+        "import_title": "Importation de la liste des Employés (Fichier Excel / CSV)",
+        "import_label": "Sélectionner un fichier (.xlsx, .xls, .csv)",
+        "import_help": "Colonnes attendues dans votre fichier :",
+        "import_btn": "Importer les Employés",
+        "sched_add_title": "Configurer un Horaire de Travail",
+        "sched_name": "Nom de l'horaire",
+        "sched_name_ph": "ex: Horaire Normal, Équipe Nuit",
+        "sched_start": "Heure d'arrivée",
+        "sched_end": "Heure de départ",
+        "sched_tol": "Tolérance de retard (minutes)",
+        "sched_add_btn": "Ajouter l'horaire",
+        "sched_list_title": "Horaires configurés",
+        "sched_col_name": "Nom",
+        "sched_col_in": "Entrée",
+        "sched_col_out": "Sortie",
+        "sched_col_tol": "Tolérance",
+        "sched_del_confirm": "Voulez-vous supprimer cet horaire ?",
+        "dev_title": "Gestion & Ajout Manuel des Terminaux de Pointage",
+        "dev_key_ph": "ID Technique (ex: Terminal_Porte1 ou Serial No)",
+        "dev_name_ph": "Nom personnalisé (ex: Porte Principale)",
+        "add_btn": "Ajouter",
+        "save_btn": "Enregistrer",
+        "dev_col_key": "ID Technique / IP d'origine",
+        "dev_col_name": "Nom Personnalisé (Ex: Porte Principale, Entrepôt...)",
+        "dev_none": "Aucun terminal détecté pour l'instant. Effectuez un pointage.",
+        "dev_del_confirm": "Voulez-vous vraiment supprimer ce terminal ?",
+        "emp_add_title": "Enregistrer un Nouvel Employé",
+        "emp_badge": "Matricule / ID Badge",
+        "emp_firstname": "Prénom",
+        "emp_lastname": "Nom",
+        "emp_dept": "Département",
+        "emp_sched": "Horaire de travail assigné",
+        "emp_save_btn": "Enregistrer l'employé",
+        "emp_list_title": "Liste des Employés",
+        "emp_summary_link": "Voir la synthèse globale",
+        "emp_col_badge": "Matricule / Badge",
+        "emp_col_fullname": "Nom & Prénom",
+        "emp_col_dept": "Département",
+        "emp_col_sched": "Horaire assigné",
+        "emp_col_status": "Statut",
+        "emp_col_actions": "Actions",
+        "emp_active": "Actif",
+        "emp_inactive": "Inactif",
+        "emp_none": "Aucun employé trouvé.",
+        "emp_del_confirm": "Voulez-vous vraiment supprimer cet employé ?",
+        "emp_edit_title": "Modifier un Employé - Hikvision",
+        "emp_edit_header": "Modification d'un Employé",
+        "emp_edit_sub": "Modifier les informations de",
+        "emp_active_chk": "Employé actif",
+        "cancel_btn": "Annuler",
+        "rep_page_title": "Rapport Journalier - Hikvision",
+        "rep_header": "Rapport Journalier Détaillé",
+        "rep_filter_title": "Filtrer le rapport journalier",
+        "start_date": "Date de début",
+        "end_date": "Date de fin",
+        "terminal": "Terminal",
+        "all_terminals": "Tous les terminaux",
+        "filter_btn": "Filtrer",
+        "rep_detail_title": "Détail des pointages",
+        "records": "enregistrements",
+        "rep_none": "Aucun pointage trouvé pour cette période.",
+        "date": "Date",
+        "matricule": "Matricule",
+        "employee": "Employé",
+        "arrival": "Arrivée",
+        "departure": "Départ",
+        "hours": "Heures",
+        "device": "Terminal",
+        "status": "Statut de Conformité",
+        "action": "Action",
+        "missing": "Manquant",
+        "late_missing": "Retard/Manquant",
+        "absent_inc": "Absent (Incomplet)",
+        "late": "En retard",
+        "early_leave": "Sortie anticipée",
+        "present_ok": "Présent (Conforme)",
+        "non_compliant": "Non conforme",
+        "punch_del_confirm": "Voulez-vous vraiment supprimer ce pointage ?",
+        "export_excel": "Exporter Excel (.xlsx)",
+        "print_pdf": "Imprimer / PDF",
+        "sum_page_title": "Synthèse des Présences - Hikvision",
+        "sum_header": "Synthèse Globale des Présences",
+        "sum_filter_title": "Filtrer la période de synthèse",
+        "sum_report_title": "Rapport Récapitulatif par Employé",
+        "collaborators": "collaborateurs",
+        "sum_none": "Aucune donnée trouvée pour cette période.",
+        "sum_present_days": "Jours Présents",
+        "sum_absent_days": "Jours Absents",
+        "sum_late_days": "Jours en Retard",
+        "sum_worked_hours": "Heures Travaillées",
+        "export_summary_excel": "Exporter Synthèse (.xlsx)",
+        "unknown": "Inconnu",
+        "excel_sheet_rep": "Rapport Pointage",
+        "excel_sheet_sum": "Synthèse Présences",
+        "excel_col_date": "Date",
+        "excel_col_badge": "Matricule",
+        "excel_col_emp": "Employé",
+        "excel_col_dept": "Département",
+        "excel_col_in": "Arrivée",
+        "excel_col_out": "Départ",
+        "excel_col_hours": "Heures Travaillées",
+        "excel_col_total_hours": "Total Heures Travaillées",
+        "excel_col_dev": "Terminal",
+        "excel_col_status": "Statut",
+        "excel_col_present": "Jours Présents",
+        "excel_col_absent": "Jours Absents",
+        "excel_col_late": "Jours en Retard",
+    },
+    "en": {
+        "login_title": "HR Login - Hikvision",
+        "login_heading": "HR Portal",
+        "login_subtitle": "Please sign in to access attendance tracking",
+        "username": "Username",
+        "password": "Password",
+        "login_btn": "Sign in",
+        "invalid_creds": "Invalid+credentials",
+        "dev_by": "Application developed by",
+        "nav_brand": "Hikvision Attendance & Time Tracking",
+        "nav_dashboard": "Dashboard",
+        "nav_reports": "Daily Report",
+        "nav_summary": "Employee Summary",
+        "nav_logout": "Logout",
+        "kpi_employees": "Registered Employees",
+        "kpi_status": "System Status",
+        "kpi_online": "Online 🟢",
+        "kpi_devices": "Connected Devices",
+        "detected": "detected",
+        "import_title": "Import Employee List (Excel / CSV File)",
+        "import_label": "Select a file (.xlsx, .xls, .csv)",
+        "import_help": "Expected columns in your file:",
+        "import_btn": "Import Employees",
+        "sched_add_title": "Configure a Work Schedule",
+        "sched_name": "Schedule name",
+        "sched_name_ph": "e.g. Standard Shift, Night Shift",
+        "sched_start": "Check-in time",
+        "sched_end": "Check-out time",
+        "sched_tol": "Late tolerance (minutes)",
+        "sched_add_btn": "Add schedule",
+        "sched_list_title": "Configured schedules",
+        "sched_col_name": "Name",
+        "sched_col_in": "Check-in",
+        "sched_col_out": "Check-out",
+        "sched_col_tol": "Tolerance",
+        "sched_del_confirm": "Do you want to delete this schedule?",
+        "dev_title": "Manage & Manually Add Attendance Devices",
+        "dev_key_ph": "Technical ID (e.g. Terminal_Door1 or Serial No)",
+        "dev_name_ph": "Friendly name (e.g. Main Door)",
+        "add_btn": "Add",
+        "save_btn": "Save",
+        "dev_col_key": "Technical ID / Source IP",
+        "dev_col_name": "Friendly Name (e.g. Main Door, Warehouse...)",
+        "dev_none": "No device detected yet. Perform a punch.",
+        "dev_del_confirm": "Are you sure you want to delete this device?",
+        "emp_add_title": "Register a New Employee",
+        "emp_badge": "Employee ID / Badge ID",
+        "emp_firstname": "First name",
+        "emp_lastname": "Last name",
+        "emp_dept": "Department",
+        "emp_sched": "Assigned work schedule",
+        "emp_save_btn": "Save employee",
+        "emp_list_title": "Employee List",
+        "emp_summary_link": "View global summary",
+        "emp_col_badge": "Employee ID / Badge",
+        "emp_col_fullname": "Full Name",
+        "emp_col_dept": "Department",
+        "emp_col_sched": "Assigned schedule",
+        "emp_col_status": "Status",
+        "emp_col_actions": "Actions",
+        "emp_active": "Active",
+        "emp_inactive": "Inactive",
+        "emp_none": "No employees found.",
+        "emp_del_confirm": "Are you sure you want to delete this employee?",
+        "emp_edit_title": "Edit Employee - Hikvision",
+        "emp_edit_header": "Edit Employee",
+        "emp_edit_sub": "Update information for",
+        "emp_active_chk": "Active employee",
+        "cancel_btn": "Cancel",
+        "rep_page_title": "Daily Report - Hikvision",
+        "rep_header": "Detailed Daily Report",
+        "rep_filter_title": "Filter daily report",
+        "start_date": "Start date",
+        "end_date": "End date",
+        "terminal": "Device",
+        "all_terminals": "All devices",
+        "filter_btn": "Filter",
+        "rep_detail_title": "Attendance details",
+        "records": "records",
+        "rep_none": "No attendance records found for this period.",
+        "date": "Date",
+        "matricule": "Employee ID",
+        "employee": "Employee",
+        "arrival": "Check-in",
+        "departure": "Check-out",
+        "hours": "Hours",
+        "device": "Device",
+        "status": "Compliance Status",
+        "action": "Action",
+        "missing": "Missing",
+        "late_missing": "Late/Missing",
+        "absent_inc": "Absent (Incomplete)",
+        "late": "Late",
+        "early_leave": "Early departure",
+        "present_ok": "Present (Compliant)",
+        "non_compliant": "Non-compliant",
+        "punch_del_confirm": "Are you sure you want to delete this attendance log?",
+        "export_excel": "Export Excel (.xlsx)",
+        "print_pdf": "Print / PDF",
+        "sum_page_title": "Attendance Summary - Hikvision",
+        "sum_header": "Global Attendance Summary",
+        "sum_filter_title": "Filter summary period",
+        "sum_report_title": "Summary Report by Employee",
+        "collaborators": "employees",
+        "sum_none": "No data found for this period.",
+        "sum_present_days": "Present Days",
+        "sum_absent_days": "Absent Days",
+        "sum_late_days": "Late Days",
+        "sum_worked_hours": "Worked Hours",
+        "export_summary_excel": "Export Summary (.xlsx)",
+        "unknown": "Unknown",
+        "excel_sheet_rep": "Attendance Report",
+        "excel_sheet_sum": "Attendance Summary",
+        "excel_col_date": "Date",
+        "excel_col_badge": "Employee ID",
+        "excel_col_emp": "Employee",
+        "excel_col_dept": "Department",
+        "excel_col_in": "Check-in",
+        "excel_col_out": "Check-out",
+        "excel_col_hours": "Worked Hours",
+        "excel_col_total_hours": "Total Worked Hours",
+        "excel_col_dev": "Device",
+        "excel_col_status": "Status",
+        "excel_col_present": "Present Days",
+        "excel_col_absent": "Absent Days",
+        "excel_col_late": "Late Days",
+    },
+}
+
+
+def get_lang(request: Request, lang_cookie: str = None) -> str:
+    q_lang = (request.query_params.get("lang") or "").lower()
+    if q_lang in ("fr", "en"):
+        return q_lang
+    c_lang = (lang_cookie or "").lower()
+    if c_lang in ("fr", "en"):
+        return c_lang
+    return "fr"
+
+
+def tr(key: str, lang: str = "fr") -> str:
+    return TRANSLATIONS.get(lang, TRANSLATIONS["fr"]).get(key, TRANSLATIONS["fr"].get(key, key))
+
+
+def lang_switcher_html(lang: str = "fr") -> str:
+    fr_cls = "btn-light fw-bold" if lang == "fr" else "btn-outline-light"
+    en_cls = "btn-light fw-bold" if lang == "en" else "btn-outline-light"
+    return f"""
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+        <a href="/set-lang/fr" class="btn {fr_cls}">FR</a>
+        <a href="/set-lang/en" class="btn {en_cls}">EN</a>
+    </div>
+    """
+
+
+def login_lang_switcher_html(lang: str = "fr") -> str:
+    fr_cls = "btn-primary fw-bold" if lang == "fr" else "btn-outline-secondary"
+    en_cls = "btn-primary fw-bold" if lang == "en" else "btn-outline-secondary"
+    return f"""
+    <div class="d-flex justify-content-end mb-2">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+            <a href="/set-lang/fr" class="btn {fr_cls}">FR</a>
+            <a href="/set-lang/en" class="btn {en_cls}">EN</a>
+        </div>
+    </div>
+    """
+
+
+@app.get("/set-lang/{lang_code}")
+async def set_language(lang_code: str, request: Request):
+    target_lang = lang_code.lower() if lang_code.lower() in ("fr", "en") else "fr"
+    referer = request.headers.get("referer") or "/"
+    response = RedirectResponse(url=referer, status_code=303)
+    response.set_cookie(key="lang", value=target_lang, httponly=False, max_age=60 * 60 * 24 * 365)
+    return response
+
 
 # Routes directe pour servir le logo ABS
 @app.get("/static/logo.png")
@@ -134,15 +438,16 @@ async def startup_event():
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(error: str = None):
+async def login_page(request: Request, error: str = None, lang: str = Cookie(None)):
+    current_lang = get_lang(request, lang)
     error_html = f'<div class="alert alert-danger py-2 mb-3 text-center small">{error}</div>' if error else ''
     html_content = f"""
     <!DOCTYPE html>
-    <html lang="fr">
+    <html lang="{current_lang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Connexion DRH - Hikvision</title>
+        <title>{tr("login_title", current_lang)}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -178,32 +483,33 @@ async def login_page(error: str = None):
     </head>
     <body>
         <div class="card login-card p-4">
+            {login_lang_switcher_html(current_lang)}
             <div class="text-center mb-4 logo-container">
                 <img src="/static/logo.png" alt="Logo ABS" class="mb-3">
-                <h4 class="fw-bold text-dark">Espace DRH</h4>
-                <p class="text-muted small">Veuillez vous connecter pour accéder au suivi</p>
+                <h4 class="fw-bold text-dark">{tr("login_heading", current_lang)}</h4>
+                <p class="text-muted small">{tr("login_subtitle", current_lang)}</p>
             </div>
             {error_html}
             <form action="/login" method="POST">
                 <div class="mb-3">
-                    <label class="form-label text-secondary small fw-bold">Nom d'utilisateur</label>
+                    <label class="form-label text-secondary small fw-bold">{tr("username", current_lang)}</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light"><i class="fa-solid fa-user text-muted"></i></span>
                         <input type="text" class="form-control" name="username" placeholder="ex: drh" required>
                     </div>
                 </div>
                 <div class="mb-4">
-                    <label class="form-label text-secondary small fw-bold">Mot de passe</label>
+                    <label class="form-label text-secondary small fw-bold">{tr("password", current_lang)}</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light"><i class="fa-solid fa-lock text-muted"></i></span>
                         <input type="password" class="form-control" name="password" placeholder="••••••••" required>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-right-to-bracket me-2"></i> Se connecter</button>
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-right-to-bracket me-2"></i> {tr("login_btn", current_lang)}</button>
             </form>
 
             <div class="text-center developer-footer">
-                <i class="fa-solid fa-code me-1 text-primary"></i> Application développée par <strong>Ir Jonathan LUKOKI</strong>
+                <i class="fa-solid fa-code me-1 text-primary"></i> {tr("dev_by", current_lang)} <strong>Ir Jonathan LUKOKI</strong>
             </div>
         </div>
     </body>
@@ -213,13 +519,15 @@ async def login_page(error: str = None):
 
 
 @app.post("/login")
-async def login_action(username: str = Form(...), password: str = Form(...)):
+async def login_action(request: Request, username: str = Form(...), password: str = Form(...), lang: str = Cookie(None)):
+    current_lang = get_lang(request, lang)
     if username == DRH_USERNAME and password == DRH_PASSWORD:
         response = RedirectResponse(url="/", status_code=303)
         response.set_cookie(key="drh_session", value="authenticated", httponly=True)
         return response
     else:
-        return RedirectResponse(url="/login?error=Identifiants+incorrects", status_code=303)
+        msg = tr("invalid_creds", current_lang)
+        return RedirectResponse(url=f"/login?error={msg}", status_code=303)
 
 
 @app.get("/logout")
@@ -235,10 +543,11 @@ async def head_root():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None)):
+async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    current_lang = get_lang(request, lang)
     employees = []
     devices = []
     schedules = []
@@ -304,7 +613,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
     if employees:
         for emp in employees:
             is_act = emp.get('is_active', True)
-            status_badge = '<span class="badge bg-success bg-opacity-10 text-success">Actif</span>' if is_act else '<span class="badge bg-danger bg-opacity-10 text-danger">Inactif</span>'
+            status_badge = f'<span class="badge bg-success bg-opacity-10 text-success">{tr("emp_active", current_lang)}</span>' if is_act else f'<span class="badge bg-danger bg-opacity-10 text-danger">{tr("emp_inactive", current_lang)}</span>'
             emp_rows_html += f"""
                 <tr>
                     <td class="ps-3"><code>{emp['badge_or_card_id']}</code></td>
@@ -313,15 +622,15 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                     <td><span class="badge bg-light text-dark border">{emp.get('schedule_name') or 'Standard'}</span></td>
                     <td>{status_badge}</td>
                     <td class="pe-3 text-end">
-                        <a href="/employees/edit/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-primary me-1" title="Modifier"><i class="fa-solid fa-pen-to-square"></i></a>
-                        <a href="/employees/delete/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-danger" title="Supprimer" onclick="return confirm('Voulez-vous vraiment supprimer cet employé ?');"><i class="fa-solid fa-trash"></i></a>
+                        <a href="/employees/edit/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-primary me-1" title="{tr("emp_edit_header", current_lang)}"><i class="fa-solid fa-pen-to-square"></i></a>
+                        <a href="/employees/delete/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("emp_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
                     </td>
                 </tr>
             """
     else:
-        emp_rows_html = """
+        emp_rows_html = f"""
                 <tr>
-                    <td colspan="6" class="text-center py-4 text-muted">Aucun employé trouvé.</td>
+                    <td colspan="6" class="text-center py-4 text-muted">{tr("emp_none", current_lang)}</td>
                 </tr>
         """
 
@@ -336,7 +645,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{str(s['end_time'])[:5]}</span></td>
                 <td>{s['late_tolerance_minutes']} min</td>
                 <td class="text-end pe-3">
-                    <a href="/schedules/delete/{s['id']}" class="btn btn-sm btn-outline-danger" title="Supprimer cet horaire" onclick="return confirm('Voulez-vous supprimer cet horaire ?');"><i class="fa-solid fa-trash"></i></a>
+                    <a href="/schedules/delete/{s['id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("sched_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
                 </td>
             </tr>
         """
@@ -351,24 +660,24 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                         <form action="/devices/rename" method="POST" class="d-flex gap-2">
                             <input type="hidden" name="device_key" value="{d['key']}">
                             <input type="text" class="form-control form-control-sm" name="friendly_name" value="{d['name']}" required>
-                            <button type="submit" class="btn btn-sm btn-success text-nowrap"><i class="fa-solid fa-floppy-disk"></i> Enregistrer</button>
+                            <button type="submit" class="btn btn-sm btn-success text-nowrap"><i class="fa-solid fa-floppy-disk"></i> {tr("save_btn", current_lang)}</button>
                         </form>
                     </td>
                     <td class="text-end pe-3">
-                        <a href="/devices/delete/{d['key']}" class="btn btn-sm btn-outline-danger" title="Supprimer ce terminal" onclick="return confirm('Voulez-vous vraiment supprimer ce terminal ?');"><i class="fa-solid fa-trash"></i></a>
+                        <a href="/devices/delete/{d['key']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("dev_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
                     </td>
                 </tr>
             """
     else:
-        dev_rows_html = '<tr><td colspan="3" class="text-center py-3 text-muted">Aucun terminal détecté pour l\'instant. Effectuez un pointage.</td></tr>'
+        dev_rows_html = f'<tr><td colspan="3" class="text-center py-3 text-muted">{tr("dev_none", current_lang)}</td></tr>'
 
     html_content = f"""
     <!DOCTYPE html>
-    <html lang="fr">
+    <html lang="{current_lang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Gestion de Présence - Hikvision</title>
+        <title>{tr("nav_brand", current_lang)}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -406,12 +715,13 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
     <body>
         <nav class="navbar navbar-dark shadow-sm py-3">
             <div class="container-fluid px-4">
-                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-clock-rotate-left me-2"></i> Suivi de Présence & Pointage Hikvision</span>
-                <div class="d-flex align-items-center gap-2">
-                    <a href="/" class="btn btn-outline-light btn-sm px-3 active"><i class="fa-solid fa-house me-1"></i> Tableau de bord</a>
-                    <a href="/reports" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-calendar-days me-1"></i> Rapport Journalier</a>
-                    <a href="/summary" class="btn btn-light btn-sm px-3 fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> Synthèse Employés</a>
-                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-2"><i class="fa-solid fa-right-from-bracket me-1"></i> Déconnexion</a>
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-clock-rotate-left me-2"></i> {tr("nav_brand", current_lang)}</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <a href="/" class="btn btn-outline-light btn-sm px-3 active"><i class="fa-solid fa-house me-1"></i> {tr("nav_dashboard", current_lang)}</a>
+                    <a href="/reports" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-calendar-days me-1"></i> {tr("nav_reports", current_lang)}</a>
+                    <a href="/summary" class="btn btn-light btn-sm px-3 fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("nav_summary", current_lang)}</a>
+                    {lang_switcher_html(current_lang)}
+                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-1"><i class="fa-solid fa-right-from-bracket me-1"></i> {tr("nav_logout", current_lang)}</a>
                 </div>
             </div>
         </nav>
@@ -424,7 +734,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                     <div class="card border-start border-primary border-4">
                         <div class="card-body d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="text-muted fw-semibold mb-1">Employés Enregistrés</h6>
+                                <h6 class="text-muted fw-semibold mb-1">{tr("kpi_employees", current_lang)}</h6>
                                 <h3 class="fw-bold text-dark mb-0">{len(employees)}</h3>
                             </div>
                             <div class="text-primary bg-primary bg-opacity-10 p-3 rounded-circle">
@@ -437,8 +747,8 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                     <div class="card border-start border-success border-4">
                         <div class="card-body d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="text-muted fw-semibold mb-1">Statut du Système</h6>
-                                <h3 class="fw-bold text-success mb-0">En ligne 🟢</h3>
+                                <h6 class="text-muted fw-semibold mb-1">{tr("kpi_status", current_lang)}</h6>
+                                <h3 class="fw-bold text-success mb-0">{tr("kpi_online", current_lang)}</h3>
                             </div>
                             <div class="text-success bg-success bg-opacity-10 p-3 rounded-circle">
                                 <i class="fa-solid fa-server fa-xl"></i>
@@ -449,8 +759,8 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-md-4">
                     <div class="card border-start border-info border-4">
                         <div class="card-body">
-                            <h6 class="text-muted fw-semibold mb-1">Terminaux Connectés</h6>
-                            <h3 class="fw-bold text-info mb-0">{len(devices)} détecté(s)</h3>
+                            <h6 class="text-muted fw-semibold mb-1">{tr("kpi_devices", current_lang)}</h6>
+                            <h3 class="fw-bold text-info mb-0">{len(devices)} {tr("detected", current_lang)}</h3>
                         </div>
                     </div>
                 </div>
@@ -459,19 +769,19 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
             <!-- SECTION IMPORTATION MASSIVE EXCEL/CSV -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-dark text-white py-3">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2 text-success"></i> Importation de la liste des Employés (Fichier Excel / CSV)</h5>
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2 text-success"></i> {tr("import_title", current_lang)}</h5>
                 </div>
                 <div class="card-body p-4">
                     <form action="/employees/import" method="POST" enctype="multipart/form-data" class="row g-3 align-items-center">
                         <div class="col-md-8">
-                            <label class="form-label text-secondary small fw-bold">Sélectionner un fichier (.xlsx, .xls, .csv)</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("import_label", current_lang)}</label>
                             <input type="file" class="form-control" name="file" accept=".xlsx, .xls, .csv" required>
                             <div class="form-text">
-                                Colonnes attendues dans votre fichier : <code>badge</code> (ou matricule), <code>prenom</code>, <code>nom</code>, <code>departement</code>.
+                                {tr("import_help", current_lang)} <code>badge</code>, <code>prenom</code>, <code>nom</code>, <code>departement</code>.
                             </div>
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
-                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-file-import me-2"></i> Importer les Employés</button>
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-file-import me-2"></i> {tr("import_btn", current_lang)}</button>
                         </div>
                     </form>
                 </div>
@@ -482,29 +792,29 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-lg-5">
                     <div class="card h-100">
                         <div class="card-header bg-success text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> Configurer un Horaire de Travail</h5>
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> {tr("sched_add_title", current_lang)}</h5>
                         </div>
                         <div class="card-body p-4">
                             <form action="/schedules/add" method="POST">
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Nom de l'horaire</label>
-                                    <input type="text" class="form-control" name="name" placeholder="ex: Horaire Normal, Équipe Nuit" required>
+                                    <label class="form-label text-secondary small fw-bold">{tr("sched_name", current_lang)}</label>
+                                    <input type="text" class="form-control" name="name" placeholder="{tr("sched_name_ph", current_lang)}" required>
                                 </div>
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label text-secondary small fw-bold">Heure d'arrivée</label>
+                                        <label class="form-label text-secondary small fw-bold">{tr("sched_start", current_lang)}</label>
                                         <input type="time" class="form-control" name="start_time" value="08:00" required>
                                     </div>
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label text-secondary small fw-bold">Heure de départ</label>
+                                        <label class="form-label text-secondary small fw-bold">{tr("sched_end", current_lang)}</label>
                                         <input type="time" class="form-control" name="end_time" value="17:00" required>
                                     </div>
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Tolérance de retard (minutes)</label>
+                                    <label class="form-label text-secondary small fw-bold">{tr("sched_tol", current_lang)}</label>
                                     <input type="number" class="form-control" name="late_tolerance_minutes" value="30" required>
                                 </div>
-                                <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> Ajouter l'horaire</button>
+                                <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> {tr("sched_add_btn", current_lang)}</button>
                             </form>
                         </div>
                     </div>
@@ -512,18 +822,18 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-lg-7">
                     <div class="card h-100">
                         <div class="card-header bg-dark text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> Horaires configurés</h5>
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> {tr("sched_list_title", current_lang)}</h5>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0">
                                     <thead>
                                         <tr>
-                                            <th class="ps-3">Nom</th>
-                                            <th>Entrée</th>
-                                            <th>Sortie</th>
-                                            <th>Tolérance</th>
-                                            <th class="text-end pe-3">Action</th>
+                                            <th class="ps-3">{tr("sched_col_name", current_lang)}</th>
+                                            <th>{tr("sched_col_in", current_lang)}</th>
+                                            <th>{tr("sched_col_out", current_lang)}</th>
+                                            <th>{tr("sched_col_tol", current_lang)}</th>
+                                            <th class="text-end pe-3">{tr("action", current_lang)}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -539,18 +849,18 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
             <!-- SECTION TERMINAUX -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-secondary text-white py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-network-wired me-2"></i> Gestion & Ajout Manuel des Terminaux de Pointage</h5>
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-network-wired me-2"></i> {tr("dev_title", current_lang)}</h5>
                 </div>
                 <div class="card-body bg-light border-bottom p-3">
                     <form action="/devices/add" method="POST" class="row g-2 align-items-center">
                         <div class="col-md-5">
-                            <input type="text" class="form-control form-control-sm" name="device_key" placeholder="ID Technique (ex: Terminal_Porte1 ou Serial No)" required>
+                            <input type="text" class="form-control form-control-sm" name="device_key" placeholder="{tr("dev_key_ph", current_lang)}" required>
                         </div>
                         <div class="col-md-5">
-                            <input type="text" class="form-control form-control-sm" name="friendly_name" placeholder="Nom personnalisé (ex: Porte Principale)" required>
+                            <input type="text" class="form-control form-control-sm" name="friendly_name" placeholder="{tr("dev_name_ph", current_lang)}" required>
                         </div>
                         <div class="col-md-2">
-                            <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold"><i class="fa-solid fa-plus me-1"></i> Ajouter</button>
+                            <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold"><i class="fa-solid fa-plus me-1"></i> {tr("add_btn", current_lang)}</button>
                         </div>
                     </form>
                 </div>
@@ -559,9 +869,9 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                         <table class="table table-hover align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th class="ps-3">ID Technique / IP d'origine</th>
-                                    <th>Nom Personnalisé (Ex: Porte Principale, Entrepôt...)</th>
-                                    <th class="text-end pe-3">Action</th>
+                                    <th class="ps-3">{tr("dev_col_key", current_lang)}</th>
+                                    <th>{tr("dev_col_name", current_lang)}</th>
+                                    <th class="text-end pe-3">{tr("action", current_lang)}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -577,33 +887,33 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-lg-4">
                     <div class="card">
                         <div class="card-header bg-primary text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-plus me-2"></i> Enregistrer un Nouvel Employé</h5>
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-plus me-2"></i> {tr("emp_add_title", current_lang)}</h5>
                         </div>
                         <div class="card-body p-4">
                             <form action="/employees/add" method="POST">
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Matricule / ID Badge</label>
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_badge", current_lang)}</label>
                                     <input type="text" class="form-control" name="badge_or_card_id" placeholder="ex: 02132" required>
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Prénom</label>
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_firstname", current_lang)}</label>
                                     <input type="text" class="form-control" name="first_name" placeholder="ex: Jonathan" required>
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Nom</label>
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_lastname", current_lang)}</label>
                                     <input type="text" class="form-control" name="last_name" placeholder="ex: Lukoki" required>
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Département</label>
-                                    <input type="text" class="form-control" name="department" placeholder="ex: Informatique">
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_dept", current_lang)}</label>
+                                    <input type="text" class="form-control" name="department" placeholder="ex: IT">
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">Horaire de travail assigné</label>
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
                                     <select class="form-select" name="schedule_id">
                                         {sched_options_html}
                                     </select>
                                 </div>
-                                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> Enregistrer l'employé</button>
+                                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> {tr("emp_save_btn", current_lang)}</button>
                             </form>
                         </div>
                     </div>
@@ -612,20 +922,20 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="col-lg-8">
                     <div class="card mt-0">
                         <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> Liste des Employés</h5>
-                            <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> Voir la synthèse globale</a>
+                            <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> {tr("emp_list_title", current_lang)}</h5>
+                            <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("emp_summary_link", current_lang)}</a>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0">
                                     <thead>
                                         <tr>
-                                            <th class="ps-3">Matricule / Badge</th>
-                                            <th>Nom & Prénom</th>
-                                            <th>Département</th>
-                                            <th>Horaire assigné</th>
-                                            <th>Statut</th>
-                                            <th class="pe-3 text-end">Actions</th>
+                                            <th class="ps-3">{tr("emp_col_badge", current_lang)}</th>
+                                            <th>{tr("emp_col_fullname", current_lang)}</th>
+                                            <th>{tr("emp_col_dept", current_lang)}</th>
+                                            <th>{tr("emp_col_sched", current_lang)}</th>
+                                            <th>{tr("emp_col_status", current_lang)}</th>
+                                            <th class="pe-3 text-end">{tr("emp_col_actions", current_lang)}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -874,10 +1184,12 @@ async def delete_attendance_log(log_id: int, drh_session: str = Cookie(None)):
 
 
 @app.get("/reports", response_class=HTMLResponse)
-async def attendance_reports(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None)):
+async def attendance_reports(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    current_lang = get_lang(request, lang)
+    unknown_label = tr("unknown", current_lang)
     reports = []
     devices = []
     mappings = {}
@@ -902,7 +1214,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                 SELECT
                     l.id,
                     l.badge_or_card_id,
-                    COALESCE(e.first_name, 'Inconnu') as first_name,
+                    COALESCE(e.first_name, %s) as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     COALESCE(e.department, '-') as department,
                     s.start_time as schedule_start,
@@ -917,7 +1229,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
             """
 
-            params = [start_date, end_date]
+            params = [unknown_label, start_date, end_date]
 
             if device_id and device_id != "ALL":
                 base_query += " AND l.device_id = %s"
@@ -1000,13 +1312,13 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                 <td><strong>{row['punch_date']}</strong></td>
                                 <td><code>{row['badge_or_card_id']}</code></td>
                                 <td class="text-start ps-4 fw-semibold">{emp_name}</td>
-                                <td><span class="badge bg-danger text-white">Retard/Manquant ({check_in_str})</span></td>
-                                <td><span class="text-muted fst-italic">Manquant</span></td>
+                                <td><span class="badge bg-danger text-white">{tr("late_missing", current_lang)} ({check_in_str})</span></td>
+                                <td><span class="text-muted fst-italic">{tr("missing", current_lang)}</span></td>
                                 <td>-</td>
                                 <td><span class="badge bg-secondary">{dev_display}</span></td>
-                                <td><span class="badge bg-danger text-white">Absent (Incomplet)</span></td>
+                                <td><span class="badge bg-danger text-white">{tr("absent_inc", current_lang)}</span></td>
                                 <td class="no-print">
-                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="Supprimer ce pointage" onclick="return confirm('Voulez-vous vraiment supprimer ce pointage ?');"><i class="fa-solid fa-trash"></i></a>
+                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("punch_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
                                 </td>
                             </tr>
                 """
@@ -1027,17 +1339,17 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             if is_arrival_valid:
                 arr_badge = f'<span class="badge bg-success text-white">{check_in_str}</span>'
             else:
-                arr_badge = f'<span class="badge bg-danger text-white">En retard ({check_in_str})</span>'
+                arr_badge = f'<span class="badge bg-danger text-white">{tr("late", current_lang)} ({check_in_str})</span>'
 
             if is_departure_valid:
                 dep_badge = f'<span class="badge bg-success text-white">{check_out_str}</span>'
             else:
-                dep_badge = f'<span class="badge bg-warning text-dark">Sortie anticipée ({check_out_str})</span>'
+                dep_badge = f'<span class="badge bg-warning text-dark">{tr("early_leave", current_lang)} ({check_out_str})</span>'
 
             if is_arrival_valid and is_departure_valid:
-                global_status = '<span class="badge bg-success text-white">Présent (Conforme)</span>'
+                global_status = f'<span class="badge bg-success text-white">{tr("present_ok", current_lang)}</span>'
             else:
-                global_status = '<span class="badge bg-danger text-white">Non conforme</span>'
+                global_status = f'<span class="badge bg-danger text-white">{tr("non_compliant", current_lang)}</span>'
 
             report_rows_html += f"""
                             <tr>
@@ -1050,18 +1362,18 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                 <td><span class="badge bg-light text-dark border">{dev_display}</span></td>
                                 <td>{global_status}</td>
                                 <td class="no-print">
-                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="Supprimer ce pointage" onclick="return confirm('Voulez-vous vraiment supprimer ce pointage ?');"><i class="fa-solid fa-trash"></i></a>
+                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("punch_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
                                 </td>
                             </tr>
             """
     else:
-        report_rows_html = """
+        report_rows_html = f"""
                             <tr>
-                                <td colspan="9" class="text-center py-4 text-muted">Aucun pointage trouvé pour cette période.</td>
+                                <td colspan="9" class="text-center py-4 text-muted">{tr("rep_none", current_lang)}</td>
                             </tr>
         """
 
-    device_options = '<option value="ALL">Tous les terminaux</option>'
+    device_options = f'<option value="ALL">{tr("all_terminals", current_lang)}</option>'
     for d in devices:
         selected = 'selected' if device_id == d['key'] else ''
         device_options += f'<option value="{d["key"]}" {selected}>{d["name"]}</option>'
@@ -1071,11 +1383,11 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
 
     html_content = f"""
     <!DOCTYPE html>
-    <html lang="fr">
+    <html lang="{current_lang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Rapport Journalier - Hikvision</title>
+        <title>{tr("rep_page_title", current_lang)}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -1145,12 +1457,13 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
     <body>
         <nav class="navbar navbar-dark shadow-sm py-3 no-print">
             <div class="container-fluid px-4">
-                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-calendar-days me-2"></i> Rapport Journalier Détaillé</span>
-                <div class="d-flex align-items-center gap-2">
-                    <a href="/" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-house me-1"></i> Tableau de bord</a>
-                    <a href="/reports" class="btn btn-light btn-sm px-3 fw-semibold"><i class="fa-solid fa-calendar-days me-1"></i> Rapport Journalier</a>
-                    <a href="/summary" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-chart-pie me-1"></i> Synthèse Employés</a>
-                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-2"><i class="fa-solid fa-right-from-bracket me-1"></i> Déconnexion</a>
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-calendar-days me-2"></i> {tr("rep_header", current_lang)}</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <a href="/" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-house me-1"></i> {tr("nav_dashboard", current_lang)}</a>
+                    <a href="/reports" class="btn btn-light btn-sm px-3 fw-semibold"><i class="fa-solid fa-calendar-days me-1"></i> {tr("nav_reports", current_lang)}</a>
+                    <a href="/summary" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-chart-pie me-1"></i> {tr("nav_summary", current_lang)}</a>
+                    {lang_switcher_html(current_lang)}
+                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-1"><i class="fa-solid fa-right-from-bracket me-1"></i> {tr("nav_logout", current_lang)}</a>
                 </div>
             </div>
         </nav>
@@ -1158,37 +1471,37 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
         <div class="container-fluid px-4 my-4">
             <div class="card shadow-sm mb-4 no-print">
                 <div class="card-header bg-primary text-white py-3">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-filter me-2"></i> Filtrer le rapport journalier</h5>
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-filter me-2"></i> {tr("rep_filter_title", current_lang)}</h5>
                 </div>
                 <div class="card-body p-4">
                     <form method="GET" action="/reports" class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold">Date de début</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("start_date", current_lang)}</label>
                             <input type="date" class="form-control" name="start_date" value="{start_date}" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold">Date de fin</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("end_date", current_lang)}</label>
                             <input type="date" class="form-control" name="end_date" value="{end_date}" required>
                         </div>
                         <div class="col-md-2">
-                            <label class="form-label text-secondary small fw-bold">Terminal</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("terminal", current_lang)}</label>
                             <select class="form-select" name="device_id">
                                 {device_options}
                             </select>
                         </div>
                         <div class="col-md-2 d-flex align-items-end">
-                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-magnifying-glass me-1"></i> Filtrer</button>
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-magnifying-glass me-1"></i> {tr("filter_btn", current_lang)}</button>
                         </div>
                     </form>
                 </div>
             </div>
 
             <div class="card shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center py-3">
-                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-clipboard-user me-2 text-primary"></i> Détail des pointages ({len(reports)} enregistrements)</h5>
+                <div class="card-header d-flex justify-content-between align-items-center py-3 flex-wrap gap-2">
+                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-clipboard-user me-2 text-primary"></i> {tr("rep_detail_title", current_lang)} ({len(reports)} {tr("records", current_lang)})</h5>
                     <div class="d-flex gap-2 no-print">
-                        <a href="{export_excel_url}" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> Exporter Excel (.xlsx)</a>
-                        <button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> Imprimer / PDF</button>
+                        <a href="{export_excel_url}" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> {tr("export_excel", current_lang)}</a>
+                        <button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> {tr("print_pdf", current_lang)}</button>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -1196,15 +1509,15 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                         <table class="table table-striped table-hover mb-0 align-middle text-center">
                             <thead>
                                 <tr>
-                                    <th>Date</th>
-                                    <th>Matricule</th>
-                                    <th class="text-start ps-4">Employé</th>
-                                    <th>Arrivée</th>
-                                    <th>Départ</th>
-                                    <th>Heures</th>
-                                    <th>Terminal</th>
-                                    <th>Statut de Conformité</th>
-                                    <th class="no-print">Action</th>
+                                    <th>{tr("date", current_lang)}</th>
+                                    <th>{tr("matricule", current_lang)}</th>
+                                    <th class="text-start ps-4">{tr("employee", current_lang)}</th>
+                                    <th>{tr("arrival", current_lang)}</th>
+                                    <th>{tr("departure", current_lang)}</th>
+                                    <th>{tr("hours", current_lang)}</th>
+                                    <th>{tr("device", current_lang)}</th>
+                                    <th>{tr("status", current_lang)}</th>
+                                    <th class="no-print">{tr("action", current_lang)}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1223,10 +1536,12 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
 
 # --- ROUTE D'EXPORTATION EXCEL DU RAPPORT JOURNALIER ---
 @app.get("/reports/export/excel")
-async def export_reports_excel(start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None)):
+async def export_reports_excel(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    current_lang = get_lang(request, lang)
+    unknown_label = tr("unknown", current_lang)
     today_str = date.today().isoformat()
     start_date = start_date or today_str
     end_date = end_date or today_str
@@ -1241,7 +1556,7 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
             base_query = """
                 SELECT
                     l.badge_or_card_id,
-                    COALESCE(e.first_name, 'Inconnu') as first_name,
+                    COALESCE(e.first_name, %s) as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     COALESCE(e.department, '-') as department,
                     s.start_time as schedule_start,
@@ -1255,7 +1570,7 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
                 LEFT JOIN work_schedules s ON e.schedule_id = s.id
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
             """
-            params = [start_date, end_date]
+            params = [unknown_label, start_date, end_date]
             if device_id and device_id != "ALL":
                 base_query += " AND l.device_id = %s"
                 params.append(device_id)
@@ -1286,31 +1601,31 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
 
             if not cin or not cout or cin == cout:
                 work_duration = "-"
-                status = "Absent (Incomplet)"
+                status = tr("absent_inc", current_lang)
             else:
                 duration = cout - cin
                 total_seconds = int(duration.total_seconds())
                 hrs = total_seconds // 3600
                 mins = (total_seconds % 3600) // 60
                 work_duration = f"{hrs}h {mins:02d}m"
-                status = "Présent (Conforme)"
+                status = tr("present_ok", current_lang)
 
             export_data.append({
-                "Date": str(r['punch_date']),
-                "Matricule": r['badge_or_card_id'],
-                "Employé": emp_name,
-                "Département": r['department'],
-                "Arrivée": cin_str,
-                "Départ": cout_str,
-                "Heures Travaillées": work_duration,
-                "Terminal": dev_display,
-                "Statut": status
+                tr("excel_col_date", current_lang): str(r['punch_date']),
+                tr("excel_col_badge", current_lang): r['badge_or_card_id'],
+                tr("excel_col_emp", current_lang): emp_name,
+                tr("excel_col_dept", current_lang): r['department'],
+                tr("excel_col_in", current_lang): cin_str,
+                tr("excel_col_out", current_lang): cout_str,
+                tr("excel_col_hours", current_lang): work_duration,
+                tr("excel_col_dev", current_lang): dev_display,
+                tr("excel_col_status", current_lang): status
             })
 
         df = pd.DataFrame(export_data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Rapport Pointage')
+            df.to_excel(writer, index=False, sheet_name=tr("excel_sheet_rep", current_lang)[:31])
         output.seek(0)
 
         filename = f"Rapport_Pointage_{start_date}_au_{end_date}.xlsx"
@@ -1332,10 +1647,12 @@ async def export_reports_excel(start_date: str = None, end_date: str = None, dev
 
 
 @app.get("/summary", response_class=HTMLResponse)
-async def attendance_summary(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None)):
+async def attendance_summary(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    current_lang = get_lang(request, lang)
+    unknown_label = tr("unknown", current_lang)
     summary_rows = []
     today_str = date.today().isoformat()
 
@@ -1350,7 +1667,7 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
         with conn.cursor() as cursor:
             query = """
                 SELECT
-                    COALESCE(e.first_name, 'Inconnu') as first_name,
+                    COALESCE(e.first_name, %s) as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     l.badge_or_card_id,
                     s.start_time as schedule_start,
@@ -1365,7 +1682,7 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
                 GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
             """
-            cursor.execute(query, (start_date, end_date))
+            cursor.execute(query, (unknown_label, start_date, end_date))
             raw_logs = cursor.fetchall()
 
             emp_stats = {}
@@ -1442,9 +1759,9 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                                 </tr>
             """
     else:
-        summary_table_rows = """
+        summary_table_rows = f"""
                                 <tr>
-                                    <td colspan="5" class="text-center py-4 text-muted">Aucune donnée trouvée pour cette période.</td>
+                                    <td colspan="5" class="text-center py-4 text-muted">{tr("sum_none", current_lang)}</td>
                                 </tr>
         """
 
@@ -1452,11 +1769,11 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
 
     html_content = f"""
     <!DOCTYPE html>
-    <html lang="fr">
+    <html lang="{current_lang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Synthèse des Présences - Hikvision</title>
+        <title>{tr("sum_page_title", current_lang)}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -1526,12 +1843,13 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
     <body>
         <nav class="navbar navbar-dark shadow-sm py-3 no-print">
             <div class="container-fluid px-4">
-                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-chart-pie me-2"></i> Synthèse Globale des Présences</span>
-                <div class="d-flex align-items-center gap-2">
-                    <a href="/" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-house me-1"></i> Tableau de bord</a>
-                    <a href="/reports" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-calendar-days me-1"></i> Rapport Journalier</a>
-                    <a href="/summary" class="btn btn-light btn-sm px-3 fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> Synthèse Employés</a>
-                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-2"><i class="fa-solid fa-right-from-bracket me-1"></i> Déconnexion</a>
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-chart-pie me-2"></i> {tr("sum_header", current_lang)}</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <a href="/" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-house me-1"></i> {tr("nav_dashboard", current_lang)}</a>
+                    <a href="/reports" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-calendar-days me-1"></i> {tr("nav_reports", current_lang)}</a>
+                    <a href="/summary" class="btn btn-light btn-sm px-3 fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("nav_summary", current_lang)}</a>
+                    {lang_switcher_html(current_lang)}
+                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-1"><i class="fa-solid fa-right-from-bracket me-1"></i> {tr("nav_logout", current_lang)}</a>
                 </div>
             </div>
         </nav>
@@ -1539,31 +1857,31 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
         <div class="container-fluid px-4 my-4">
             <div class="card shadow-sm mb-4 no-print">
                 <div class="card-header bg-primary text-white py-3">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-filter me-2"></i> Filtrer la période de synthèse</h5>
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-filter me-2"></i> {tr("sum_filter_title", current_lang)}</h5>
                 </div>
                 <div class="card-body p-4">
                     <form method="GET" action="/summary" class="row g-3">
                         <div class="col-md-5">
-                            <label class="form-label text-secondary small fw-bold">Date de début</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("start_date", current_lang)}</label>
                             <input type="date" class="form-control" name="start_date" value="{start_date}" required>
                         </div>
                         <div class="col-md-5">
-                            <label class="form-label text-secondary small fw-bold">Date de fin</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("end_date", current_lang)}</label>
                             <input type="date" class="form-control" name="end_date" value="{end_date}" required>
                         </div>
                         <div class="col-md-2 d-flex align-items-end">
-                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-magnifying-glass me-1"></i> Filtrer</button>
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-magnifying-glass me-1"></i> {tr("filter_btn", current_lang)}</button>
                         </div>
                     </form>
                 </div>
             </div>
 
             <div class="card shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center py-3">
-                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-clipboard-user me-2 text-primary"></i> Rapport Récapitulatif par Employé ({len(summary_rows)} collaborateurs)</h5>
+                <div class="card-header d-flex justify-content-between align-items-center py-3 flex-wrap gap-2">
+                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-clipboard-user me-2 text-primary"></i> {tr("sum_report_title", current_lang)} ({len(summary_rows)} {tr("collaborators", current_lang)})</h5>
                     <div class="d-flex gap-2 no-print">
-                        <a href="{export_summary_url}" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> Exporter Synthèse (.xlsx)</a>
-                        <button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> Imprimer / PDF</button>
+                        <a href="{export_summary_url}" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> {tr("export_summary_excel", current_lang)}</a>
+                        <button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> {tr("print_pdf", current_lang)}</button>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -1571,11 +1889,11 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                         <table class="table table-striped table-hover mb-0 align-middle text-center">
                             <thead>
                                 <tr>
-                                    <th class="text-start ps-4">Employé</th>
-                                    <th>Jours Présents</th>
-                                    <th>Jours Absents</th>
-                                    <th>Jours en Retard</th>
-                                    <th class="pe-4">Heures Travaillées</th>
+                                    <th class="text-start ps-4">{tr("employee", current_lang)}</th>
+                                    <th>{tr("sum_present_days", current_lang)}</th>
+                                    <th>{tr("sum_absent_days", current_lang)}</th>
+                                    <th>{tr("sum_late_days", current_lang)}</th>
+                                    <th class="pe-4">{tr("sum_worked_hours", current_lang)}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1594,10 +1912,12 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
 
 # --- ROUTE D'EXPORTATION EXCEL DE LA SYNTHÈSE ---
 @app.get("/summary/export/excel")
-async def export_summary_excel(start_date: str = None, end_date: str = None, drh_session: str = Cookie(None)):
+async def export_summary_excel(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    current_lang = get_lang(request, lang)
+    unknown_label = tr("unknown", current_lang)
     today_str = date.today().isoformat()
     start_date = start_date or today_str
     end_date = end_date or today_str
@@ -1608,7 +1928,7 @@ async def export_summary_excel(start_date: str = None, end_date: str = None, drh
         with conn.cursor() as cursor:
             query = """
                 SELECT
-                    COALESCE(e.first_name, 'Inconnu') as first_name,
+                    COALESCE(e.first_name, %s) as first_name,
                     COALESCE(e.last_name, '') as last_name,
                     l.badge_or_card_id,
                     s.start_time as schedule_start,
@@ -1623,7 +1943,7 @@ async def export_summary_excel(start_date: str = None, end_date: str = None, drh
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
                 GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
             """
-            cursor.execute(query, (start_date, end_date))
+            cursor.execute(query, (unknown_label, start_date, end_date))
             raw_logs = cursor.fetchall()
         conn.close()
 
@@ -1666,18 +1986,18 @@ async def export_summary_excel(start_date: str = None, end_date: str = None, drh
             hrs = data["total_seconds"] // 3600
             mins = (data["total_seconds"] % 3600) // 60
             export_summary.append({
-                "Matricule": badge,
-                "Employé": data["name"],
-                "Jours Présents": data["present_days"],
-                "Jours Absents": data["absent_days"],
-                "Jours en Retard": data["late_days"],
-                "Total Heures Travaillées": f"{hrs}h {mins:02d}m"
+                tr("excel_col_badge", current_lang): badge,
+                tr("excel_col_emp", current_lang): data["name"],
+                tr("excel_col_present", current_lang): data["present_days"],
+                tr("excel_col_absent", current_lang): data["absent_days"],
+                tr("excel_col_late", current_lang): data["late_days"],
+                tr("excel_col_total_hours", current_lang): f"{hrs}h {mins:02d}m"
             })
 
         df = pd.DataFrame(export_summary)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Synthèse Présences')
+            df.to_excel(writer, index=False, sheet_name=tr("excel_sheet_sum", current_lang)[:31])
         output.seek(0)
 
         filename = f"Synthese_Presence_{start_date}_au_{end_date}.xlsx"
@@ -1774,10 +2094,11 @@ async def delete_employee(badge_id: str, drh_session: str = Cookie(None)):
 
 
 @app.get("/employees/edit/{badge_id}", response_class=HTMLResponse)
-async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None)):
+async def edit_employee_page(request: Request, badge_id: str, drh_session: str = Cookie(None), lang: str = Cookie(None)):
     if drh_session != "authenticated":
         return RedirectResponse(url="/login", status_code=303)
 
+    current_lang = get_lang(request, lang)
     employee = None
     schedules = []
     conn = None
@@ -1809,11 +2130,11 @@ async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None)):
 
     html_content = f"""
     <!DOCTYPE html>
-    <html lang="fr">
+    <html lang="{current_lang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Modifier un Employé - Hikvision</title>
+        <title>{tr("emp_edit_title", current_lang)}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -1825,47 +2146,50 @@ async def edit_employee_page(badge_id: str, drh_session: str = Cookie(None)):
     <body>
         <nav class="navbar navbar-dark shadow-sm py-3">
             <div class="container-fluid px-4">
-                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-user-pen me-2"></i> Modification d'un Employé</span>
-                <a href="/" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-house me-1"></i> Tableau de bord</a>
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-user-pen me-2"></i> {tr("emp_edit_header", current_lang)}</span>
+                <div class="d-flex align-items-center gap-2">
+                    {lang_switcher_html(current_lang)}
+                    <a href="/" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-house me-1"></i> {tr("nav_dashboard", current_lang)}</a>
+                </div>
             </div>
         </nav>
 
         <div class="container my-5" style="max-width: 600px;">
             <div class="card shadow-sm">
                 <div class="card-header bg-primary text-white py-3">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-gear me-2"></i> Modifier les informations de {employee['first_name']} {employee['last_name']}</h5>
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-gear me-2"></i> {tr("emp_edit_sub", current_lang)} {employee['first_name']} {employee['last_name']}</h5>
                 </div>
                 <div class="card-body p-4">
                     <form action="/employees/update/{badge_id}" method="POST">
                         <div class="mb-3">
-                            <label class="form-label text-secondary small fw-bold">Matricule / ID Badge</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("emp_badge", current_lang)}</label>
                             <input type="text" class="form-control" name="badge_or_card_id" value="{employee['badge_or_card_id']}" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-secondary small fw-bold">Prénom</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("emp_firstname", current_lang)}</label>
                             <input type="text" class="form-control" name="first_name" value="{employee['first_name']}" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-secondary small fw-bold">Nom</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("emp_lastname", current_lang)}</label>
                             <input type="text" class="form-control" name="last_name" value="{employee['last_name']}" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-secondary small fw-bold">Département</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("emp_dept", current_lang)}</label>
                             <input type="text" class="form-control" name="department" value="{employee.get('department') or ''}">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-secondary small fw-bold">Horaire de travail</label>
+                            <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
                             <select class="form-select" name="schedule_id">
                                 {sched_options_html}
                             </select>
                         </div>
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="is_active" name="is_active" value="true" {'checked' if employee.get('is_active') else ''}>
-                            <label class="form-check-label small fw-bold text-secondary" for="is_active">Employé actif</label>
+                            <label class="form-check-label small fw-bold text-secondary" for="is_active">{tr("emp_active_chk", current_lang)}</label>
                         </div>
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> Enregistrer</button>
-                            <a href="/" class="btn btn-secondary w-100 py-2 fw-semibold shadow-sm text-center text-decoration-none pt-2">Annuler</a>
+                            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> {tr("save_btn", current_lang)}</button>
+                            <a href="/" class="btn btn-secondary w-100 py-2 fw-semibold shadow-sm text-center text-decoration-none pt-2">{tr("cancel_btn", current_lang)}</a>
                         </div>
                     </form>
                 </div>
