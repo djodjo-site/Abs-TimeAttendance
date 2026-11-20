@@ -25,6 +25,13 @@ TRANSLATIONS = {
         "password": "Mot de passe",
         "login_btn": "Se connecter",
         "invalid_creds": "Identifiants+incorrects",
+        "forbidden_role": "Accès+réservé+au+compte+DRH",
+        "sup_page_title": "Exportation des Rapports - Superviseur",
+        "sup_header": "Espace Superviseur - Exportation",
+        "sup_heading": "Exportation des Rapports de Présence",
+        "sup_subtitle": "Sélectionnez une période pour exporter le rapport journalier (.xlsx)",
+        "sup_export_btn": "Exporter le Rapport (.xlsx)",
+        "sup_notice": "Ce compte est limité exclusivement à l'exportation du rapport.",
         "dev_by": "Application développée par",
         "nav_brand": "Suivi de Présence & Pointage Hikvision",
         "nav_dashboard": "Tableau de bord",
@@ -152,6 +159,13 @@ TRANSLATIONS = {
         "password": "Password",
         "login_btn": "Sign in",
         "invalid_creds": "Invalid+credentials",
+        "forbidden_role": "Access+restricted+to+HR+account",
+        "sup_page_title": "Report Export - Supervisor",
+        "sup_header": "Supervisor Portal - Export",
+        "sup_heading": "Attendance Report Export",
+        "sup_subtitle": "Select a date range to export the daily report (.xlsx)",
+        "sup_export_btn": "Export Report (.xlsx)",
+        "sup_notice": "This account is restricted strictly to exporting the report.",
         "dev_by": "Application developed by",
         "nav_brand": "Hikvision Attendance & Time Tracking",
         "nav_dashboard": "Dashboard",
@@ -333,6 +347,16 @@ async def get_logo():
 
 DRH_USERNAME = "drh"
 DRH_PASSWORD = "password123"
+SUPERVISOR_USERNAME = "superviseur"
+SUPERVISOR_PASSWORD = "password123"
+
+
+def get_session_role(drh_session: str = None) -> str:
+    if drh_session == "drh":
+        return "drh"
+    if drh_session == "supervisor":
+        return "supervisor"
+    return None
 
 
 def _table_exists(cursor, table_name: str) -> bool:
@@ -495,7 +519,7 @@ async def login_page(request: Request, error: str = None, lang: str = Cookie(Non
                     <label class="form-label text-secondary small fw-bold">{tr("username", current_lang)}</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light"><i class="fa-solid fa-user text-muted"></i></span>
-                        <input type="text" class="form-control" name="username" placeholder="ex: drh" required>
+                        <input type="text" class="form-control" name="username" placeholder="ex: drh ou superviseur" required>
                     </div>
                 </div>
                 <div class="mb-4">
@@ -523,7 +547,11 @@ async def login_action(request: Request, username: str = Form(...), password: st
     current_lang = get_lang(request, lang)
     if username == DRH_USERNAME and password == DRH_PASSWORD:
         response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="drh_session", value="authenticated", httponly=True)
+        response.set_cookie(key="drh_session", value="drh", httponly=True)
+        return response
+    elif username == SUPERVISOR_USERNAME and password == SUPERVISOR_PASSWORD:
+        response = RedirectResponse(url="/supervisor", status_code=303)
+        response.set_cookie(key="drh_session", value="supervisor", httponly=True)
         return response
     else:
         msg = tr("invalid_creds", current_lang)
@@ -537,6 +565,89 @@ async def logout():
     return response
 
 
+@app.get("/supervisor", response_class=HTMLResponse)
+async def supervisor_export_page(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
+    role = get_session_role(drh_session)
+    if not role:
+        return RedirectResponse(url="/login", status_code=303)
+    if role != "drh" and role != "supervisor":
+        return RedirectResponse(url="/login", status_code=303)
+
+    current_lang = get_lang(request, lang)
+    today_str = date.today().isoformat()
+    start_date = start_date or today_str
+    end_date = end_date or today_str
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="{current_lang}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{tr("sup_page_title", current_lang)}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            body {{
+                background-color: #f4f7f6;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+            }}
+            .card {{
+                border: none;
+                border-radius: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-dark shadow-sm py-3">
+            <div class="container-fluid px-4">
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-file-export me-2"></i> {tr("sup_header", current_lang)}</span>
+                <div class="d-flex align-items-center gap-2">
+                    {lang_switcher_html(current_lang)}
+                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-1"><i class="fa-solid fa-right-from-bracket me-1"></i> {tr("nav_logout", current_lang)}</a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container my-5" style="max-width: 640px;">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white py-3">
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2"></i> {tr("sup_heading", current_lang)}</h5>
+                </div>
+                <div class="card-body p-4">
+                    <p class="text-muted small mb-4">{tr("sup_subtitle", current_lang)}</p>
+                    <form method="GET" action="/reports/export/excel" class="row g-3">
+                        <input type="hidden" name="device_id" value="ALL">
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold">{tr("start_date", current_lang)}</label>
+                            <input type="date" class="form-control" name="start_date" value="{start_date}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold">{tr("end_date", current_lang)}</label>
+                            <input type="date" class="form-control" name="end_date" value="{end_date}" required>
+                        </div>
+                        <div class="col-12 pt-2">
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm">
+                                <i class="fa-solid fa-file-excel me-2"></i> {tr("sup_export_btn", current_lang)}
+                            </button>
+                        </div>
+                    </form>
+                    <div class="alert alert-secondary mt-4 mb-0 py-2 small text-center">
+                        <i class="fa-solid fa-lock me-1"></i> {tr("sup_notice", current_lang)}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
 @app.head("/")
 async def head_root():
     return Response(status_code=200)
@@ -544,8 +655,11 @@ async def head_root():
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     current_lang = get_lang(request, lang)
     employees = []
@@ -958,8 +1072,11 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
 # --- ROUTE IMPORTATION D'EMPLOYÉS (EXCEL / CSV) ---
 @app.post("/employees/import")
 async def import_employees(file: UploadFile = File(...), drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     conn = None
     try:
@@ -1035,8 +1152,11 @@ async def add_schedule(
     late_tolerance_minutes: int = Form(30),
     drh_session: str = Cookie(None)
 ):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1060,8 +1180,11 @@ async def add_schedule(
 
 @app.get("/schedules/delete/{sched_id}")
 async def delete_schedule(sched_id: int, drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1083,8 +1206,11 @@ async def delete_schedule(sched_id: int, drh_session: str = Cookie(None)):
 
 @app.post("/devices/add")
 async def add_device_manual(device_key: str = Form(...), friendly_name: str = Form(...), drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1110,8 +1236,11 @@ async def add_device_manual(device_key: str = Form(...), friendly_name: str = Fo
 
 @app.post("/devices/rename")
 async def rename_device(device_key: str = Form(...), friendly_name: str = Form(...), drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1136,8 +1265,11 @@ async def rename_device(device_key: str = Form(...), friendly_name: str = Form(.
 
 @app.get("/devices/delete/{device_key}")
 async def delete_device(device_key: str, drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     conn = None
     try:
@@ -1161,8 +1293,11 @@ async def delete_device(device_key: str, drh_session: str = Cookie(None)):
 
 @app.get("/reports/delete/{log_id}")
 async def delete_attendance_log(log_id: int, drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     conn = None
     try:
@@ -1185,8 +1320,11 @@ async def delete_attendance_log(log_id: int, drh_session: str = Cookie(None)):
 
 @app.get("/reports", response_class=HTMLResponse)
 async def attendance_reports(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     current_lang = get_lang(request, lang)
     unknown_label = tr("unknown", current_lang)
@@ -1537,7 +1675,8 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
 # --- ROUTE D'EXPORTATION EXCEL DU RAPPORT JOURNALIER ---
 @app.get("/reports/export/excel")
 async def export_reports_excel(request: Request, start_date: str = None, end_date: str = None, device_id: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
 
     current_lang = get_lang(request, lang)
@@ -1648,8 +1787,11 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
 
 @app.get("/summary", response_class=HTMLResponse)
 async def attendance_summary(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     current_lang = get_lang(request, lang)
     unknown_label = tr("unknown", current_lang)
@@ -1913,8 +2055,11 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
 # --- ROUTE D'EXPORTATION EXCEL DE LA SYNTHÈSE ---
 @app.get("/summary/export/excel")
 async def export_summary_excel(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     current_lang = get_lang(request, lang)
     unknown_label = tr("unknown", current_lang)
@@ -2027,8 +2172,11 @@ async def add_employee(
     schedule_id: int = Form(None),
     drh_session: str = Cookie(None)
 ):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     conn = None
     try:
@@ -2070,8 +2218,11 @@ async def add_employee(
 
 @app.get("/employees/delete/{badge_id}")
 async def delete_employee(badge_id: str, drh_session: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     conn = None
     try:
@@ -2095,8 +2246,11 @@ async def delete_employee(badge_id: str, drh_session: str = Cookie(None)):
 
 @app.get("/employees/edit/{badge_id}", response_class=HTMLResponse)
 async def edit_employee_page(request: Request, badge_id: str, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     current_lang = get_lang(request, lang)
     employee = None
@@ -2212,8 +2366,11 @@ async def update_employee(
     is_active: str = Form(None),
     drh_session: str = Cookie(None)
 ):
-    if drh_session != "authenticated":
+    role = get_session_role(drh_session)
+    if not role:
         return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
 
     is_active_bool = True if is_active == "true" else False
     conn = None
