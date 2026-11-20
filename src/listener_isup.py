@@ -6,7 +6,7 @@ import io
 import pandas as pd
 from zoneinfo import ZoneInfo
 
-# Ajout dynamique du dossier parent dans le chemin Python
+# Ajoute dynamique du dossier parent dans le chemin Python
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from fastapi import FastAPI, Request, Response, Form, Cookie, UploadFile, File
@@ -17,7 +17,7 @@ from database.db_config import get_db_connection
 app = FastAPI(title="Hikvision Attendance System")
 
 
-# Route directe pour servir le logo ABS
+# Routes directe pour servir le logo ABS
 @app.get("/static/logo.png")
 async def get_logo():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
