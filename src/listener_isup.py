@@ -32,7 +32,6 @@ TRANSLATIONS = {
         "sup_subtitle": "Sélectionnez une période pour exporter le rapport journalier (.xlsx)",
         "sup_export_btn": "Exporter le Rapport (.xlsx)",
         "sup_notice": "Ce compte est limité exclusivement à l'exportation du rapport.",
-        "readonly_badge": "Mode Lecture Seule",
         "dev_by": "Application développée par",
         "nav_brand": "Suivi de Présence & Pointage Hikvision",
         "nav_dashboard": "Tableau de bord",
@@ -167,7 +166,6 @@ TRANSLATIONS = {
         "sup_subtitle": "Select a date range to export the daily report (.xlsx)",
         "sup_export_btn": "Export Report (.xlsx)",
         "sup_notice": "This account is restricted strictly to exporting the report.",
-        "readonly_badge": "Read-Only Mode",
         "dev_by": "Application developed by",
         "nav_brand": "Hikvision Attendance & Time Tracking",
         "nav_dashboard": "Dashboard",
@@ -351,8 +349,6 @@ DRH_USERNAME = "drh"
 DRH_PASSWORD = "password123"
 SUPERVISOR_USERNAME = "superviseur"
 SUPERVISOR_PASSWORD = "password123"
-VIEWER_USERNAME = "lecteur"
-VIEWER_PASSWORD = "password123"
 
 
 def get_session_role(drh_session: str = None) -> str:
@@ -360,8 +356,6 @@ def get_session_role(drh_session: str = None) -> str:
         return "drh"
     if drh_session == "supervisor":
         return "supervisor"
-    if drh_session == "viewer":
-        return "viewer"
     return None
 
 
@@ -471,6 +465,343 @@ async def startup_event():
 async def login_page(request: Request, error: str = None, lang: str = Cookie(None)):
     current_lang = get_lang(request, lang)
     error_html = f'<div class="alert alert-danger py-2 mb-3 text-center small">{error}</div>' if error else ''
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="{current_lang}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{tr("login_title", current_lang)}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            body {{
+                background: linear-gradient(135deg, #1e293b, #0f172a);
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }}
+            .login-card {{
+                width: 100%;
+                max-width: 420px;
+                border: none;
+                border-radius: 16px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+                background: #ffffff;
+            }}
+            .logo-container img {{
+                max-height: 80px;
+                width: auto;
+                object-fit: contain;
+            }}
+            .developer-footer {{
+                border-top: 1px solid #f1f5f9;
+                padding-top: 15px;
+                margin-top: 20px;
+                font-size: 0.8rem;
+                color: #64748b;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="card login-card p-4">
+            {login_lang_switcher_html(current_lang)}
+            <div class="text-center mb-4 logo-container">
+                <img src="/static/logo.png" alt="Logo ABS" class="mb-3">
+                <h4 class="fw-bold text-dark">{tr("login_heading", current_lang)}</h4>
+                <p class="text-muted small">{tr("login_subtitle", current_lang)}</p>
+            </div>
+            {error_html}
+            <form action="/login" method="POST">
+                <div class="mb-3">
+                    <label class="form-label text-secondary small fw-bold">{tr("username", current_lang)}</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="fa-solid fa-user text-muted"></i></span>
+                        <input type="text" class="form-control" name="username" placeholder="ex: drh ou superviseur" required>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label text-secondary small fw-bold">{tr("password", current_lang)}</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="fa-solid fa-lock text-muted"></i></span>
+                        <input type="password" class="form-control" name="password" placeholder="••••••••" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-right-to-bracket me-2"></i> {tr("login_btn", current_lang)}</button>
+            </form>
+
+            <div class="text-center developer-footer">
+                <i class="fa-solid fa-code me-1 text-primary"></i> {tr("dev_by", current_lang)} <strong>Ir Jonathan LUKOKI</strong>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
+@app.post("/login")
+async def login_action(request: Request, username: str = Form(...), password: str = Form(...), lang: str = Cookie(None)):
+    current_lang = get_lang(request, lang)
+    if username == DRH_USERNAME and password == DRH_PASSWORD:
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie(key="drh_session", value="drh", httponly=True)
+        return response
+    elif username == SUPERVISOR_USERNAME and password == SUPERVISOR_PASSWORD:
+        response = RedirectResponse(url="/supervisor", status_code=303)
+        response.set_cookie(key="drh_session", value="supervisor", httponly=True)
+        return response
+    else:
+        msg = tr("invalid_creds", current_lang)
+        return RedirectResponse(url=f"/login?error={msg}", status_code=303)
+
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(key="drh_session")
+    return response
+
+
+@app.get("/supervisor", response_class=HTMLResponse)
+async def supervisor_export_page(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
+    role = get_session_role(drh_session)
+    if not role:
+        return RedirectResponse(url="/login", status_code=303)
+    if role != "drh" and role != "supervisor":
+        return RedirectResponse(url="/login", status_code=303)
+
+    current_lang = get_lang(request, lang)
+    today_str = date.today().isoformat()
+    start_date = start_date or today_str
+    end_date = end_date or today_str
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="{current_lang}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{tr("sup_page_title", current_lang)}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            body {{
+                background-color: #f4f7f6;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+            }}
+            .card {{
+                border: none;
+                border-radius: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            }}
+        </style>
+    </head>
+    <body>
+        <nav class="navbar navbar-dark shadow-sm py-3">
+            <div class="container-fluid px-4">
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-file-export me-2"></i> {tr("sup_header", current_lang)}</span>
+                <div class="d-flex align-items-center gap-2">
+                    {lang_switcher_html(current_lang)}
+                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-1"><i class="fa-solid fa-right-from-bracket me-1"></i> {tr("nav_logout", current_lang)}</a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container my-5" style="max-width: 640px;">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white py-3">
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2"></i> {tr("sup_heading", current_lang)}</h5>
+                </div>
+                <div class="card-body p-4">
+                    <p class="text-muted small mb-4">{tr("sup_subtitle", current_lang)}</p>
+                    <form method="GET" action="/reports/export/excel" class="row g-3">
+                        <input type="hidden" name="device_id" value="ALL">
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold">{tr("start_date", current_lang)}</label>
+                            <input type="date" class="form-control" name="start_date" value="{start_date}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold">{tr("end_date", current_lang)}</label>
+                            <input type="date" class="form-control" name="end_date" value="{end_date}" required>
+                        </div>
+                        <div class="col-12 pt-2">
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm">
+                                <i class="fa-solid fa-file-excel me-2"></i> {tr("sup_export_btn", current_lang)}
+                            </button>
+                        </div>
+                    </form>
+                    <hr class="my-4">
+                    <form method="GET" action="/summary/export/excel" class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold">{tr("start_date", current_lang)}</label>
+                            <input type="date" class="form-control" name="start_date" value="{start_date}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold">{tr("end_date", current_lang)}</label>
+                            <input type="date" class="form-control" name="end_date" value="{end_date}" required>
+                        </div>
+                        <div class="col-12 pt-1">
+                            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm">
+                                <i class="fa-solid fa-file-excel me-2"></i> {tr("export_summary_excel", current_lang)}
+                            </button>
+                        </div>
+                    </form>
+                    <div class="alert alert-secondary mt-4 mb-0 py-2 small text-center">
+                        <i class="fa-solid fa-lock me-1"></i> {tr("sup_notice", current_lang)}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
+@app.head("/")
+async def head_root():
+    return Response(status_code=200)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
+    role = get_session_role(drh_session)
+    if not role:
+        return RedirectResponse(url="/login", status_code=303)
+    if role == "supervisor":
+        return RedirectResponse(url="/supervisor", status_code=303)
+
+    is_readonly = (role == "viewer")
+    current_lang = get_lang(request, lang)
+    employees = []
+    devices = []
+    schedules = []
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute("""
+                    SELECT e.*, s.name as schedule_name
+                    FROM employees e
+                    LEFT JOIN work_schedules s ON e.schedule_id = s.id
+                    ORDER BY e.first_name ASC
+                """)
+                employees = cursor.fetchall()
+            except Exception:
+                conn.rollback()
+                employees = []
+
+            try:
+                cursor.execute("SELECT * FROM work_schedules ORDER BY id ASC")
+                schedules = cursor.fetchall()
+            except Exception:
+                conn.rollback()
+                schedules = []
+
+            cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL")
+            raw_devs = [row['device_id'] for row in cursor.fetchall()]
+
+            cursor.execute("SELECT * FROM devices_mapping")
+            mappings = {row['device_key']: row['friendly_name'] for row in cursor.fetchall()}
+
+            all_keys = set(raw_devs).union(set(mappings.keys()))
+
+            for dev in all_keys:
+                devices.append({
+                    "key": dev,
+                    "name": mappings.get(dev, dev)
+                })
+
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"Attention - Connexion BDD non établie : {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    alert_html = ""
+    if error:
+        alert_html = f'<div class="alert alert-danger alert-dismissible fade show" role="alert"><i class="fa-solid fa-circle-exclamation me-2"></i>{error}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
+    elif success:
+        alert_html = f'<div class="alert alert-success alert-dismissible fade show" role="alert"><i class="fa-solid fa-circle-check me-2"></i>{success}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
+
+    emp_rows_html = ""
+    if employees:
+        for emp in employees:
+            is_act = emp.get('is_active', True)
+            status_badge = f'<span class="badge bg-success bg-opacity-10 text-success">{tr("emp_active", current_lang)}</span>' if is_act else f'<span class="badge bg-danger bg-opacity-10 text-danger">{tr("emp_inactive", current_lang)}</span>'
+            emp_rows_html += f"""
+                <tr>
+                    <td class="ps-3"><code>{emp['badge_or_card_id']}</code></td>
+                    <td class="fw-semibold">{emp['first_name']} {emp['last_name']}</td>
+                    <td>{emp.get('department') or '-'}</td>
+                    <td><span class="badge bg-light text-dark border">{emp.get('schedule_name') or 'Standard'}</span></td>
+                    <td>{status_badge}</td>
+                    <td class="pe-3 text-end">
+                        <a href="/employees/edit/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-primary me-1" title="{tr("emp_edit_header", current_lang)}"><i class="fa-solid fa-pen-to-square"></i></a>
+                        <a href="/employees/delete/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("emp_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
+                    </td>
+                </tr>
+            """
+    else:
+        emp_rows_html = f"""
+                <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">{tr("emp_none", current_lang)}</td>
+                </tr>
+        """
+
+    sched_rows_html = ""
+    sched_options_html = ""
+    for s in schedules:
+        sched_options_html += f'<option value="{s["id"]}">{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
+        sched_rows_html += f"""
+            <tr>
+                <td class="ps-3 fw-semibold">{s['name']}</td>
+                <td><span class="badge bg-primary bg-opacity-10 text-primary">{str(s['start_time'])[:5]}</span></td>
+                <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{str(s['end_time'])[:5]}</span></td>
+                <td>{s['late_tolerance_minutes']} min</td>
+                <td class="text-end pe-3">
+                    <a href="/schedules/delete/{s['id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("sched_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
+                </td>
+            </tr>
+        """
+
+    dev_rows_html = ""
+    if devices:
+        for d in devices:
+            dev_rows_html += f"""
+                <tr>
+                    <td class="ps-3"><code>{d['key']}</code></td>
+                    <td>
+                        <form action="/devices/rename" method="POST" class="d-flex gap-2">
+                            <input type="hidden" name="device_key" value="{d['key']}">
+                            <input type="text" class="form-control form-control-sm" name="friendly_name" value="{d['name']}" required>
+                            <button type="submit" class="btn btn-sm btn-success text-nowrap"><i class="fa-solid fa-floppy-disk"></i> {tr("save_btn", current_lang)}</button>
+                        </form>
+                    </td>
+                    <td class="text-end pe-3">
+                        <a href="/devices/delete/{d['key']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("dev_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
+                    </td>
+                </tr>
+            """
+    else:
+        dev_rows_html = f'<tr><td colspan="3" class="text-center py-3 text-muted">{tr("dev_none", current_lang)}</td></tr>'
+
     import_section_html = "" if is_readonly else f"""
             <!-- SECTION IMPORTATION MASSIVE EXCEL/CSV -->
             <div class="card shadow-sm mb-4">
@@ -593,347 +924,6 @@ async def login_page(request: Request, error: str = None, lang: str = Cookie(Non
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{tr("login_title", current_lang)}</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            body {{
-                background: linear-gradient(135deg, #1e293b, #0f172a);
-                height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            }}
-            .login-card {{
-                width: 100%;
-                max-width: 420px;
-                border: none;
-                border-radius: 16px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-                background: #ffffff;
-            }}
-            .logo-container img {{
-                max-height: 80px;
-                width: auto;
-                object-fit: contain;
-            }}
-            .developer-footer {{
-                border-top: 1px solid #f1f5f9;
-                padding-top: 15px;
-                margin-top: 20px;
-                font-size: 0.8rem;
-                color: #64748b;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="card login-card p-4">
-            {login_lang_switcher_html(current_lang)}
-            <div class="text-center mb-4 logo-container">
-                <img src="/static/logo.png" alt="Logo ABS" class="mb-3">
-                <h4 class="fw-bold text-dark">{tr("login_heading", current_lang)}</h4>
-                <p class="text-muted small">{tr("login_subtitle", current_lang)}</p>
-            </div>
-            {error_html}
-            <form action="/login" method="POST">
-                <div class="mb-3">
-                    <label class="form-label text-secondary small fw-bold">{tr("username", current_lang)}</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light"><i class="fa-solid fa-user text-muted"></i></span>
-                        <input type="text" class="form-control" name="username" placeholder="ex: drh, superviseur ou lecteur" required>
-                    </div>
-                </div>
-                <div class="mb-4">
-                    <label class="form-label text-secondary small fw-bold">{tr("password", current_lang)}</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light"><i class="fa-solid fa-lock text-muted"></i></span>
-                        <input type="password" class="form-control" name="password" placeholder="••••••••" required>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-right-to-bracket me-2"></i> {tr("login_btn", current_lang)}</button>
-            </form>
-
-            <div class="text-center developer-footer">
-                <i class="fa-solid fa-code me-1 text-primary"></i> {tr("dev_by", current_lang)} <strong>Ir Jonathan LUKOKI</strong>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
-
-
-@app.post("/login")
-async def login_action(request: Request, username: str = Form(...), password: str = Form(...), lang: str = Cookie(None)):
-    current_lang = get_lang(request, lang)
-    if username == DRH_USERNAME and password == DRH_PASSWORD:
-        response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="drh_session", value="drh", httponly=True)
-        return response
-    elif username == SUPERVISOR_USERNAME and password == SUPERVISOR_PASSWORD:
-        response = RedirectResponse(url="/supervisor", status_code=303)
-        response.set_cookie(key="drh_session", value="supervisor", httponly=True)
-        return response
-    elif username == VIEWER_USERNAME and password == VIEWER_PASSWORD:
-        response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="drh_session", value="viewer", httponly=True)
-        return response
-    else:
-        msg = tr("invalid_creds", current_lang)
-        return RedirectResponse(url=f"/login?error={msg}", status_code=303)
-
-
-@app.get("/logout")
-async def logout():
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie(key="drh_session")
-    return response
-
-
-@app.get("/supervisor", response_class=HTMLResponse)
-async def supervisor_export_page(request: Request, start_date: str = None, end_date: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    role = get_session_role(drh_session)
-    if not role:
-        return RedirectResponse(url="/login", status_code=303)
-    if role != "drh" and role != "supervisor":
-        return RedirectResponse(url="/login", status_code=303)
-
-    current_lang = get_lang(request, lang)
-    today_str = date.today().isoformat()
-    start_date = start_date or today_str
-    end_date = end_date or today_str
-
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="{current_lang}">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{tr("sup_page_title", current_lang)}</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            body {{
-                background-color: #f4f7f6;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            }}
-            .navbar {{
-                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
-            }}
-            .card {{
-                border: none;
-                border-radius: 12px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            }}
-        </style>
-    </head>
-    <body>
-        <nav class="navbar navbar-dark shadow-sm py-3">
-            <div class="container-fluid px-4">
-                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-file-export me-2"></i> {tr("sup_header", current_lang)}</span>
-                <div class="d-flex align-items-center gap-2">
-                    {lang_switcher_html(current_lang)}
-                    <a href="/logout" class="btn btn-danger btn-sm px-3 ms-1"><i class="fa-solid fa-right-from-bracket me-1"></i> {tr("nav_logout", current_lang)}</a>
-                </div>
-            </div>
-        </nav>
-
-        <div class="container my-5" style="max-width: 640px;">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white py-3">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2"></i> {tr("sup_heading", current_lang)}</h5>
-                </div>
-                <div class="card-body p-4">
-                    <p class="text-muted small mb-4">{tr("sup_subtitle", current_lang)}</p>
-                    <form method="GET" action="/reports/export/excel" class="row g-3">
-                        <input type="hidden" name="device_id" value="ALL">
-                        <div class="col-md-6">
-                            <label class="form-label text-secondary small fw-bold">{tr("start_date", current_lang)}</label>
-                            <input type="date" class="form-control" name="start_date" value="{start_date}" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-secondary small fw-bold">{tr("end_date", current_lang)}</label>
-                            <input type="date" class="form-control" name="end_date" value="{end_date}" required>
-                        </div>
-                        <div class="col-12 pt-2">
-                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm">
-                                <i class="fa-solid fa-file-excel me-2"></i> {tr("sup_export_btn", current_lang)}
-                            </button>
-                        </div>
-                    </form>
-                    <div class="alert alert-secondary mt-4 mb-0 py-2 small text-center">
-                        <i class="fa-solid fa-lock me-1"></i> {tr("sup_notice", current_lang)}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
-
-
-@app.head("/")
-async def head_root():
-    return Response(status_code=200)
-
-
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, error: str = None, success: str = None, drh_session: str = Cookie(None), lang: str = Cookie(None)):
-    role = get_session_role(drh_session)
-    if not role:
-        return RedirectResponse(url="/login", status_code=303)
-    if role == "supervisor":
-        return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
-
-    is_readonly = (role == "viewer")
-    current_lang = get_lang(request, lang)
-    employees = []
-    devices = []
-    schedules = []
-
-    conn = None
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            try:
-                cursor.execute("""
-                    SELECT e.*, s.name as schedule_name
-                    FROM employees e
-                    LEFT JOIN work_schedules s ON e.schedule_id = s.id
-                    ORDER BY e.first_name ASC
-                """)
-                employees = cursor.fetchall()
-            except Exception:
-                conn.rollback()
-                employees = []
-
-            try:
-                cursor.execute("SELECT * FROM work_schedules ORDER BY id ASC")
-                schedules = cursor.fetchall()
-            except Exception:
-                conn.rollback()
-                schedules = []
-
-            cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL")
-            raw_devs = [row['device_id'] for row in cursor.fetchall()]
-
-            cursor.execute("SELECT * FROM devices_mapping")
-            mappings = {row['device_key']: row['friendly_name'] for row in cursor.fetchall()}
-
-            all_keys = set(raw_devs).union(set(mappings.keys()))
-
-            for dev in all_keys:
-                devices.append({
-                    "key": dev,
-                    "name": mappings.get(dev, dev)
-                })
-
-    except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        print(f"Attention - Connexion BDD non établie : {e}")
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    alert_html = ""
-    if error:
-        alert_html = f'<div class="alert alert-danger alert-dismissible fade show" role="alert"><i class="fa-solid fa-circle-exclamation me-2"></i>{error}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
-    elif success:
-        alert_html = f'<div class="alert alert-success alert-dismissible fade show" role="alert"><i class="fa-solid fa-circle-check me-2"></i>{success}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
-
-    emp_rows_html = ""
-    if employees:
-        for emp in employees:
-            is_act = emp.get('is_active', True)
-            status_badge = f'<span class="badge bg-success bg-opacity-10 text-success">{tr("emp_active", current_lang)}</span>' if is_act else f'<span class="badge bg-danger bg-opacity-10 text-danger">{tr("emp_inactive", current_lang)}</span>'
-            emp_action_cell = "" if is_readonly else f"""
-                    <td class="pe-3 text-end">
-                        <a href="/employees/edit/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-primary me-1" title="{tr("emp_edit_header", current_lang)}"><i class="fa-solid fa-pen-to-square"></i></a>
-                        <a href="/employees/delete/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("emp_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
-                    </td>"""
-            emp_rows_html += f"""
-                <tr>
-                    <td class="ps-3"><code>{emp['badge_or_card_id']}</code></td>
-                    <td class="fw-semibold">{emp['first_name']} {emp['last_name']}</td>
-                    <td>{emp.get('department') or '-'}</td>
-                    <td><span class="badge bg-light text-dark border">{emp.get('schedule_name') or 'Standard'}</span></td>
-                    <td>{status_badge}</td>
-                    {emp_action_cell}
-                </tr>
-            """
-    else:
-        emp_colspan = 5 if is_readonly else 6
-        emp_rows_html = f"""
-                <tr>
-                    <td colspan="{emp_colspan}" class="text-center py-4 text-muted">{tr("emp_none", current_lang)}</td>
-                </tr>
-        """
-
-    sched_rows_html = ""
-    sched_options_html = ""
-    for s in schedules:
-        sched_options_html += f'<option value="{s["id"]}">{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
-        sched_action_cell = "" if is_readonly else f"""
-                <td class="text-end pe-3">
-                    <a href="/schedules/delete/{s['id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("sched_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
-                </td>"""
-        sched_rows_html += f"""
-            <tr>
-                <td class="ps-3 fw-semibold">{s['name']}</td>
-                <td><span class="badge bg-primary bg-opacity-10 text-primary">{str(s['start_time'])[:5]}</span></td>
-                <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{str(s['end_time'])[:5]}</span></td>
-                <td>{s['late_tolerance_minutes']} min</td>
-                {sched_action_cell}
-            </tr>
-        """
-
-    dev_rows_html = ""
-    if devices:
-        for d in devices:
-            if is_readonly:
-                dev_rows_html += f"""
-                <tr>
-                    <td class="ps-3"><code>{d['key']}</code></td>
-                    <td class="fw-semibold">{d['name']}</td>
-                </tr>
-                """
-            else:
-                dev_rows_html += f"""
-                <tr>
-                    <td class="ps-3"><code>{d['key']}</code></td>
-                    <td>
-                        <form action="/devices/rename" method="POST" class="d-flex gap-2">
-                            <input type="hidden" name="device_key" value="{d['key']}">
-                            <input type="text" class="form-control form-control-sm" name="friendly_name" value="{d['name']}" required>
-                            <button type="submit" class="btn btn-sm btn-success text-nowrap"><i class="fa-solid fa-floppy-disk"></i> {tr("save_btn", current_lang)}</button>
-                        </form>
-                    </td>
-                    <td class="text-end pe-3">
-                        <a href="/devices/delete/{d['key']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("dev_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
-                    </td>
-                </tr>
-                """
-    else:
-        dev_colspan = 2 if is_readonly else 3
-        dev_rows_html = f'<tr><td colspan="{dev_colspan}" class="text-center py-3 text-muted">{tr("dev_none", current_lang)}</td></tr>'
-
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="{current_lang}">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{tr("nav_brand", current_lang)}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -972,7 +962,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
     <body>
         <nav class="navbar navbar-dark shadow-sm py-3">
             <div class="container-fluid px-4">
-                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-clock-rotate-left me-2"></i> {tr("nav_brand", current_lang)}{readonly_banner_html}</span>
+                <span class="navbar-brand mb-0 h5 fw-bold"><i class="fa-solid fa-clock-rotate-left me-2"></i> {tr("nav_brand", current_lang)}</span>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <a href="/" class="btn btn-outline-light btn-sm px-3 active"><i class="fa-solid fa-house me-1"></i> {tr("nav_dashboard", current_lang)}</a>
                     <a href="/reports" class="btn btn-outline-light btn-sm px-3"><i class="fa-solid fa-calendar-days me-1"></i> {tr("nav_reports", current_lang)}</a>
@@ -1023,12 +1013,60 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 </div>
             </div>
 
-            {import_section_html}
+            <!-- SECTION IMPORTATION MASSIVE EXCEL/CSV -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-dark text-white py-3">
+                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2 text-success"></i> {tr("import_title", current_lang)}</h5>
+                </div>
+                <div class="card-body p-4">
+                    <form action="/employees/import" method="POST" enctype="multipart/form-data" class="row g-3 align-items-center">
+                        <div class="col-md-8">
+                            <label class="form-label text-secondary small fw-bold">{tr("import_label", current_lang)}</label>
+                            <input type="file" class="form-control" name="file" accept=".xlsx, .xls, .csv" required>
+                            <div class="form-text">
+                                {tr("import_help", current_lang)} <code>badge</code>, <code>prenom</code>, <code>nom</code>, <code>departement</code>.
+                            </div>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-file-import me-2"></i> {tr("import_btn", current_lang)}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
 
             <!-- SECTION GESTION DES HORAIRES DE TRAVAIL -->
             <div class="row g-4 mb-4">
-                {sched_form_html}
-                <div class="{sched_col_cls}">
+                <div class="col-lg-5">
+                    <div class="card h-100">
+                        <div class="card-header bg-success text-white py-3">
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> {tr("sched_add_title", current_lang)}</h5>
+                        </div>
+                        <div class="card-body p-4">
+                            <form action="/schedules/add" method="POST">
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("sched_name", current_lang)}</label>
+                                    <input type="text" class="form-control" name="name" placeholder="{tr("sched_name_ph", current_lang)}" required>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label text-secondary small fw-bold">{tr("sched_start", current_lang)}</label>
+                                        <input type="time" class="form-control" name="start_time" value="08:00" required>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label text-secondary small fw-bold">{tr("sched_end", current_lang)}</label>
+                                        <input type="time" class="form-control" name="end_time" value="17:00" required>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("sched_tol", current_lang)}</label>
+                                    <input type="number" class="form-control" name="late_tolerance_minutes" value="30" required>
+                                </div>
+                                <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> {tr("sched_add_btn", current_lang)}</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-7">
                     <div class="card h-100">
                         <div class="card-header bg-dark text-white py-3">
                             <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> {tr("sched_list_title", current_lang)}</h5>
@@ -1042,7 +1080,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                             <th>{tr("sched_col_in", current_lang)}</th>
                                             <th>{tr("sched_col_out", current_lang)}</th>
                                             <th>{tr("sched_col_tol", current_lang)}</th>
-                                            {sched_th_action}
+                                            <th class="text-end pe-3">{tr("action", current_lang)}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1060,7 +1098,19 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 <div class="card-header bg-secondary text-white py-3 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-network-wired me-2"></i> {tr("dev_title", current_lang)}</h5>
                 </div>
-                {dev_add_form_html}
+                <div class="card-body bg-light border-bottom p-3">
+                    <form action="/devices/add" method="POST" class="row g-2 align-items-center">
+                        <div class="col-md-5">
+                            <input type="text" class="form-control form-control-sm" name="device_key" placeholder="{tr("dev_key_ph", current_lang)}" required>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="text" class="form-control form-control-sm" name="friendly_name" placeholder="{tr("dev_name_ph", current_lang)}" required>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold"><i class="fa-solid fa-plus me-1"></i> {tr("add_btn", current_lang)}</button>
+                        </div>
+                    </form>
+                </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
@@ -1068,7 +1118,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                 <tr>
                                     <th class="ps-3">{tr("dev_col_key", current_lang)}</th>
                                     <th>{tr("dev_col_name", current_lang)}</th>
-                                    {dev_th_action}
+                                    <th class="text-end pe-3">{tr("action", current_lang)}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1081,8 +1131,42 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
 
             <!-- SECTION EMPLOYÉS -->
             <div class="row g-4">
-                {emp_add_form_html}
-                <div class="{emp_col_cls}">
+                <div class="col-lg-4">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white py-3">
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-plus me-2"></i> {tr("emp_add_title", current_lang)}</h5>
+                        </div>
+                        <div class="card-body p-4">
+                            <form action="/employees/add" method="POST">
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_badge", current_lang)}</label>
+                                    <input type="text" class="form-control" name="badge_or_card_id" placeholder="ex: 02132" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_firstname", current_lang)}</label>
+                                    <input type="text" class="form-control" name="first_name" placeholder="ex: Jonathan" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_lastname", current_lang)}</label>
+                                    <input type="text" class="form-control" name="last_name" placeholder="ex: Lukoki" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_dept", current_lang)}</label>
+                                    <input type="text" class="form-control" name="department" placeholder="ex: IT">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
+                                    <select class="form-select" name="schedule_id">
+                                        {sched_options_html}
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> {tr("emp_save_btn", current_lang)}</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-8">
                     <div class="card mt-0">
                         <div class="card-header py-3 d-flex justify-content-between align-items-center">
                             <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> {tr("emp_list_title", current_lang)}</h5>
@@ -1098,7 +1182,7 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                             <th>{tr("emp_col_dept", current_lang)}</th>
                                             <th>{tr("emp_col_sched", current_lang)}</th>
                                             <th>{tr("emp_col_status", current_lang)}</th>
-                                            {emp_th_action}
+                                            <th class="pe-3 text-end">{tr("emp_col_actions", current_lang)}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1126,8 +1210,6 @@ async def import_employees(file: UploadFile = File(...), drh_session: str = Cook
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     conn = None
     try:
@@ -1208,8 +1290,6 @@ async def add_schedule(
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1238,8 +1318,6 @@ async def delete_schedule(sched_id: int, drh_session: str = Cookie(None)):
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1266,8 +1344,6 @@ async def add_device_manual(device_key: str = Form(...), friendly_name: str = Fo
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1298,8 +1374,6 @@ async def rename_device(device_key: str = Form(...), friendly_name: str = Form(.
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
     conn = None
     try:
         conn = get_db_connection()
@@ -1329,8 +1403,6 @@ async def delete_device(device_key: str, drh_session: str = Cookie(None)):
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     conn = None
     try:
@@ -1359,8 +1431,6 @@ async def delete_attendance_log(log_id: int, drh_session: str = Cookie(None)):
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     conn = None
     try:
@@ -1388,8 +1458,6 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     is_readonly = (role == "viewer")
     current_lang = get_lang(request, lang)
@@ -1510,11 +1578,6 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             tolerance = row['late_tolerance_minutes']
             p_date = row['punch_date'] if isinstance(row['punch_date'], date) else date.today()
 
-            del_cell_html = "" if is_readonly else f"""
-                                <td class="no-print">
-                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("punch_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
-                                </td>"""
-
             if not check_in or not check_out or check_in == check_out:
                 report_rows_html += f"""
                             <tr>
@@ -1526,7 +1589,9 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                 <td>-</td>
                                 <td><span class="badge bg-secondary">{dev_display}</span></td>
                                 <td><span class="badge bg-danger text-white">{tr("absent_inc", current_lang)}</span></td>
-                                {del_cell_html}
+                                <td class="no-print">
+                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("punch_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
+                                </td>
                             </tr>
                 """
                 continue
@@ -1568,14 +1633,15 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                 <td><strong>{work_duration}</strong></td>
                                 <td><span class="badge bg-light text-dark border">{dev_display}</span></td>
                                 <td>{global_status}</td>
-                                {del_cell_html}
+                                <td class="no-print">
+                                    <a href="/reports/delete/{del_id}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("punch_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
+                                </td>
                             </tr>
             """
     else:
-        rep_colspan = 8 if is_readonly else 9
         report_rows_html = f"""
                             <tr>
-                                <td colspan="{rep_colspan}" class="text-center py-4 text-muted">{tr("rep_none", current_lang)}</td>
+                                <td colspan="9" class="text-center py-4 text-muted">{tr("rep_none", current_lang)}</td>
                             </tr>
         """
 
@@ -1707,7 +1773,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                     <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-clipboard-user me-2 text-primary"></i> {tr("rep_detail_title", current_lang)} ({len(reports)} {tr("records", current_lang)})</h5>
                     <div class="d-flex gap-2 no-print">
                         <a href="{export_excel_url}" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> {tr("export_excel", current_lang)}</a>
-                        {"" if is_readonly else f'<button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> {tr("print_pdf", current_lang)}</button>'}
+                        <button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> {tr("print_pdf", current_lang)}</button>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -1723,7 +1789,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                                     <th>{tr("hours", current_lang)}</th>
                                     <th>{tr("device", current_lang)}</th>
                                     <th>{tr("status", current_lang)}</th>
-                                    {"" if is_readonly else f'<th class="no-print">{tr("action", current_lang)}</th>'}
+                                    <th class="no-print">{tr("action", current_lang)}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1860,8 +1926,6 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     is_readonly = (role == "viewer")
     current_lang = get_lang(request, lang)
@@ -2092,7 +2156,10 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
             <div class="card shadow-sm">
                 <div class="card-header d-flex justify-content-between align-items-center py-3 flex-wrap gap-2">
                     <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-clipboard-user me-2 text-primary"></i> {tr("sum_report_title", current_lang)} ({len(summary_rows)} {tr("collaborators", current_lang)})</h5>
-                    {"" if is_readonly else '<div class="d-flex gap-2 no-print"><a href="' + export_summary_url + '" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> ' + tr("export_summary_excel", current_lang) + '</a><button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> ' + tr("print_pdf", current_lang) + '</button></div>'}
+                    <div class="d-flex gap-2 no-print">
+                        <a href="{export_summary_url}" class="btn btn-success btn-sm fw-semibold"><i class="fa-solid fa-file-excel me-1"></i> {tr("export_summary_excel", current_lang)}</a>
+                        <button onclick="window.print();" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fa-solid fa-print me-1"></i> {tr("print_pdf", current_lang)}</button>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -2128,8 +2195,6 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     current_lang = get_lang(request, lang)
     unknown_label = tr("unknown", current_lang)
@@ -2247,8 +2312,6 @@ async def add_employee(
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     conn = None
     try:
@@ -2295,8 +2358,6 @@ async def delete_employee(badge_id: str, drh_session: str = Cookie(None)):
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     conn = None
     try:
@@ -2325,8 +2386,6 @@ async def edit_employee_page(request: Request, badge_id: str, drh_session: str =
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     current_lang = get_lang(request, lang)
     employee = None
@@ -2447,8 +2506,6 @@ async def update_employee(
         return RedirectResponse(url="/login", status_code=303)
     if role == "supervisor":
         return RedirectResponse(url="/supervisor", status_code=303)
-    if role == "viewer":
-        return RedirectResponse(url="/", status_code=303)
 
     is_active_bool = True if is_active == "true" else False
     conn = None
