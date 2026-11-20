@@ -125,15 +125,15 @@ TRANSLATIONS = {
         "print_pdf": "Imprimer / PDF",
         "sum_page_title": "Synthèse des Présences - Hikvision",
         "sum_header": "Synthèse Globale des Présences",
-        "sum_filter_title": "Filtrer la période de synthèse",
-        "sum_report_title": "Rapport Récapitulatif par Employé",
-        "collaborators": "collaborateurs",
+        "sum_filter_title": "Période de résumé du filtre",
+        "sum_report_title": "Rapport de synthèse par employé",
+        "collaborators": "employés",
         "sum_none": "Aucune donnée trouvée pour cette période.",
-        "sum_present_days": "Jours Présents",
+        "sum_present_days": "De nos jours",
         "sum_absent_days": "Jours Absents",
-        "sum_late_days": "Jours en Retard",
+        "sum_late_days": "Jours tardifs",
         "sum_worked_hours": "Heures Travaillées",
-        "export_summary_excel": "Exporter Synthèse (.xlsx)",
+        "export_summary_excel": "Résumé d'exportation (.xlsx)",
         "unknown": "Inconnu",
         "excel_sheet_rep": "Rapport Pointage",
         "excel_sheet_sum": "Synthèse Présences",
@@ -349,6 +349,8 @@ DRH_USERNAME = "drh"
 DRH_PASSWORD = "password123"
 SUPERVISOR_USERNAME = "superviseur"
 SUPERVISOR_PASSWORD = "password123"
+LECTEUR_USERNAME = "lecteur"
+LECTEUR_PASSWORD = "password123"
 
 
 def get_session_role(drh_session: str = None) -> str:
@@ -356,6 +358,8 @@ def get_session_role(drh_session: str = None) -> str:
         return "drh"
     if drh_session == "supervisor":
         return "supervisor"
+    if drh_session == "viewer":
+        return "viewer"
     return None
 
 
@@ -519,7 +523,7 @@ async def login_page(request: Request, error: str = None, lang: str = Cookie(Non
                     <label class="form-label text-secondary small fw-bold">{tr("username", current_lang)}</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light"><i class="fa-solid fa-user text-muted"></i></span>
-                        <input type="text" class="form-control" name="username" placeholder="ex: drh ou superviseur" required>
+                        <input type="text" class="form-control" name="username" placeholder="ex: drh, superviseur ou lecteur" required>
                     </div>
                 </div>
                 <div class="mb-4">
@@ -552,6 +556,10 @@ async def login_action(request: Request, username: str = Form(...), password: st
     elif username == SUPERVISOR_USERNAME and password == SUPERVISOR_PASSWORD:
         response = RedirectResponse(url="/supervisor", status_code=303)
         response.set_cookie(key="drh_session", value="supervisor", httponly=True)
+        return response
+    elif username == LECTEUR_USERNAME and password == LECTEUR_PASSWORD:
+        response = RedirectResponse(url="/summary", status_code=303)
+        response.set_cookie(key="drh_session", value="viewer", httponly=True)
         return response
     else:
         msg = tr("invalid_creds", current_lang)
@@ -2002,7 +2010,7 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                 total_secs = data["total_seconds"]
                 hrs = total_secs // 3600
                 mins = (total_secs % 3600) // 60
-                formatted_hours = f"{hrs}h {mins:02d}m"
+                formatted_hours = f"0 h {mins:02d} min" if hrs == 0 else f"{hrs}h {mins:02d} min"
 
                 summary_rows.append({
                     "badge": badge,
