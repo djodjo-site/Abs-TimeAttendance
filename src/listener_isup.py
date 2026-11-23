@@ -53,6 +53,15 @@ TRANSLATIONS = {
         "sched_start": "Heure d'arrivée",
         "sched_end": "Heure de départ",
         "sched_tol": "Tolérance de retard (minutes)",
+        "sched_sat_title": "Horaire spécifique du Samedi (optionnel)",
+        "sched_sat_start": "Arrivée Samedi",
+        "sched_sat_end": "Départ Samedi",
+        "sched_col_sat": "Samedi",
+        "sched_none_sat": "Identique / Repos",
+        "tab_employees": "Gestion des Employés",
+        "tab_schedules": "Gestion des Horaires",
+        "tab_devices": "Gestion des Terminaux",
+        "tab_import": "Importation Excel / CSV",
         "sched_add_btn": "Ajouter l'horaire",
         "sched_list_title": "Horaires configurés",
         "sched_col_name": "Nom",
@@ -187,6 +196,15 @@ TRANSLATIONS = {
         "sched_start": "Check-in time",
         "sched_end": "Check-out time",
         "sched_tol": "Late tolerance (minutes)",
+        "sched_sat_title": "Specific Saturday Schedule (optional)",
+        "sched_sat_start": "Saturday Check-in",
+        "sched_sat_end": "Saturday Check-out",
+        "sched_col_sat": "Saturday",
+        "sched_none_sat": "Same / Off",
+        "tab_employees": "Employee Management",
+        "tab_schedules": "Schedule Management",
+        "tab_devices": "Device Management",
+        "tab_import": "Excel / CSV Import",
         "sched_add_btn": "Add schedule",
         "sched_list_title": "Configured schedules",
         "sched_col_name": "Name",
@@ -412,24 +430,44 @@ def init_database_tables():
                 )
             """)
 
-            # Table des horaires de travail
+            # Table des horaires de travail (avec horaire spécifique du samedi)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS work_schedules (
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(100) NOT NULL,
                     start_time TIME NOT NULL,
                     end_time TIME NOT NULL,
+                    sat_start_time TIME,
+                    sat_end_time TIME,
                     late_tolerance_minutes INT DEFAULT 30
                 )
             """)
 
-            # Insérer un horaire par défaut s'il n'en existe aucun
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'work_schedules' AND column_name = 'sat_start_time'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE work_schedules ADD COLUMN sat_start_time TIME DEFAULT '11:00:00'")
+
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'work_schedules' AND column_name = 'sat_end_time'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE work_schedules ADD COLUMN sat_end_time TIME DEFAULT '15:00:00'")
+
+            # Insérer les horaires par défaut s'il n'en existe aucun
             cursor.execute("SELECT COUNT(*) as cnt FROM work_schedules")
             res = cursor.fetchone()
             if res and res['cnt'] == 0:
                 cursor.execute("""
-                    INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
-                    VALUES ('Standard (08:00 - 17:00)', '08:00:00', '17:00:00', 30)
+                    INSERT INTO work_schedules (name, start_time, end_time, sat_start_time, sat_end_time, late_tolerance_minutes)
+                    VALUES
+                        ('Standard (Lun-Ven 08:00-17:00 | Sam 11:00-15:00)', '08:00:00', '17:00:00', '11:00:00', '15:00:00', 30),
+                        ('Samedi Uniquement (11:00 - 15:00)', '11:00:00', '15:00:00', '11:00:00', '15:00:00', 30)
                 """)
 
             # Vérifier si la colonne schedule_id existe dans employees, sinon l'ajouter
@@ -459,6 +497,13 @@ def init_database_tables():
             except Exception:
                 pass
 
+
+
+def resolve_day_schedule(p_date, sched_start, sched_end, sat_start=None, sat_end=None):
+    d_obj = p_date if isinstance(p_date, date) else date.today()
+    if d_obj.weekday() == 5:  # Samedi
+        return (sat_start or time(11, 0), sat_end or time(15, 0))
+    return (sched_start or time(8, 0), sched_end or time(17, 0))
 
 @app.on_event("startup")
 async def startup_event():
@@ -879,12 +924,16 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
     sched_rows_html = ""
     sched_options_html = ""
     for s in schedules:
-        sched_options_html += f'<option value="{s["id"]}">{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
+        sat_in = str(s['sat_start_time'])[:5] if s.get('sat_start_time') else "11:00"
+        sat_out = str(s['sat_end_time'])[:5] if s.get('sat_end_time') else "15:00"
+        sat_label = f"{sat_in} - {sat_out}"
+        sched_options_html += f'<option value="{s["id"]}">{s["name"]} ({str(s["start_time"])[:5]}-{str(s["end_time"])[:5]} | Sam {sat_label})</option>'
         sched_rows_html += f"""
             <tr>
                 <td class="ps-3 fw-semibold">{s['name']}</td>
                 <td><span class="badge bg-primary bg-opacity-10 text-primary">{str(s['start_time'])[:5]}</span></td>
                 <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{str(s['end_time'])[:5]}</span></td>
+                <td><span class="badge bg-info bg-opacity-10 text-dark">{sat_label}</span></td>
                 <td>{s['late_tolerance_minutes']} min</td>
                 <td class="text-end pe-3">
                     <a href="/schedules/delete/{s['id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("sched_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
@@ -956,6 +1005,16 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label text-secondary small fw-bold">{tr("sched_end", current_lang)}</label>
                                         <input type="time" class="form-control" name="end_time" value="17:00" required>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label text-secondary small fw-bold">{tr("sched_sat_start", current_lang)}</label>
+                                        <input type="time" class="form-control" name="sat_start_time" value="11:00">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label text-secondary small fw-bold">{tr("sched_sat_end", current_lang)}</label>
+                                        <input type="time" class="form-control" name="sat_end_time" value="15:00">
                                     </div>
                                 </div>
                                 <div class="mb-3">
@@ -1124,189 +1183,250 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                 </div>
             </div>
 
-            <!-- SECTION IMPORTATION MASSIVE EXCEL/CSV -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-dark text-white py-3">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2 text-success"></i> {tr("import_title", current_lang)}</h5>
-                </div>
-                <div class="card-body p-4">
-                    <form action="/employees/import" method="POST" enctype="multipart/form-data" class="row g-3 align-items-center">
-                        <div class="col-md-8">
-                            <label class="form-label text-secondary small fw-bold">{tr("import_label", current_lang)}</label>
-                            <input type="file" class="form-control" name="file" accept=".xlsx, .xls, .csv" required>
-                            <div class="form-text">
-                                {tr("import_help", current_lang)} <code>badge</code>, <code>prenom</code>, <code>nom</code>, <code>departement</code>.
+            <!-- NAVIGATION PAR ONGLETS DU TABLEAU DE BORD -->
+            <ul class="nav nav-pills bg-white p-2 rounded-3 shadow-sm mb-4 gap-2 flex-wrap" id="dashboardTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active fw-semibold" id="tab-employees-btn" data-bs-toggle="pill" data-bs-target="#pane-employees" type="button" role="tab">
+                        <i class="fa-solid fa-users-gear me-2"></i>{tr("tab_employees", current_lang)}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link fw-semibold" id="tab-schedules-btn" data-bs-toggle="pill" data-bs-target="#pane-schedules" type="button" role="tab">
+                        <i class="fa-solid fa-business-time me-2"></i>{tr("tab_schedules", current_lang)}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link fw-semibold" id="tab-devices-btn" data-bs-toggle="pill" data-bs-target="#pane-devices" type="button" role="tab">
+                        <i class="fa-solid fa-network-wired me-2"></i>{tr("tab_devices", current_lang)}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link fw-semibold" id="tab-import-btn" data-bs-toggle="pill" data-bs-target="#pane-import" type="button" role="tab">
+                        <i class="fa-solid fa-file-excel me-2"></i>{tr("tab_import", current_lang)}
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="dashboardTabsContent">
+                <!-- ONGLET 1 : AJOUT & GESTION DES EMPLOYÉS -->
+                <div class="tab-pane fade show active" id="pane-employees" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header bg-primary text-white py-3">
+                                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-plus me-2"></i> {tr("emp_add_title", current_lang)}</h5>
+                                </div>
+                                <div class="card-body p-4">
+                                    <form action="/employees/add" method="POST">
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("emp_badge", current_lang)}</label>
+                                            <input type="text" class="form-control" name="badge_or_card_id" placeholder="ex: 02132" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("emp_firstname", current_lang)}</label>
+                                            <input type="text" class="form-control" name="first_name" placeholder="ex: Jonathan" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("emp_lastname", current_lang)}</label>
+                                            <input type="text" class="form-control" name="last_name" placeholder="ex: Lukoki" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("emp_dept", current_lang)}</label>
+                                            <input type="text" class="form-control" name="department" placeholder="ex: IT">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
+                                            <select class="form-select" name="schedule_id">
+                                                {sched_options_html}
+                                            </select>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> {tr("emp_save_btn", current_lang)}</button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-file-import me-2"></i> {tr("import_btn", current_lang)}</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
 
-            <!-- SECTION GESTION DES HORAIRES DE TRAVAIL -->
-            <div class="row g-4 mb-4">
-                <div class="col-lg-5">
-                    <div class="card h-100">
-                        <div class="card-header bg-success text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> {tr("sched_add_title", current_lang)}</h5>
-                        </div>
-                        <div class="card-body p-4">
-                            <form action="/schedules/add" method="POST">
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("sched_name", current_lang)}</label>
-                                    <input type="text" class="form-control" name="name" placeholder="{tr("sched_name_ph", current_lang)}" required>
+                        <div class="col-lg-8">
+                            <div class="card mt-0">
+                                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> {tr("emp_list_title", current_lang)}</h5>
+                                    <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("emp_summary_link", current_lang)}</a>
                                 </div>
-                                <div class="row">
-                                    <div class="col-md-6 mb-3">
-                                        <label class="form-label text-secondary small fw-bold">{tr("sched_start", current_lang)}</label>
-                                        <input type="time" class="form-control" name="start_time" value="08:00" required>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th class="ps-3">{tr("emp_col_badge", current_lang)}</th>
+                                                    <th>{tr("emp_col_fullname", current_lang)}</th>
+                                                    <th>{tr("emp_col_dept", current_lang)}</th>
+                                                    <th>{tr("emp_col_sched", current_lang)}</th>
+                                                    <th>{tr("emp_col_status", current_lang)}</th>
+                                                    <th class="pe-3 text-end">{tr("emp_col_actions", current_lang)}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {emp_rows_html}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <div class="col-md-6 mb-3">
-                                        <label class="form-label text-secondary small fw-bold">{tr("sched_end", current_lang)}</label>
-                                        <input type="time" class="form-control" name="end_time" value="17:00" required>
-                                    </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("sched_tol", current_lang)}</label>
-                                    <input type="number" class="form-control" name="late_tolerance_minutes" value="30" required>
-                                </div>
-                                <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> {tr("sched_add_btn", current_lang)}</button>
-                            </form>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="col-lg-7">
-                    <div class="card h-100">
-                        <div class="card-header bg-dark text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> {tr("sched_list_title", current_lang)}</h5>
+
+                <!-- ONGLET 2 : GESTION DES HORAIRES -->
+                <div class="tab-pane fade" id="pane-schedules" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-lg-5">
+                            <div class="card h-100">
+                                <div class="card-header bg-success text-white py-3">
+                                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-clock me-2"></i> {tr("sched_add_title", current_lang)}</h5>
+                                </div>
+                                <div class="card-body p-4">
+                                    <form action="/schedules/add" method="POST">
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("sched_name", current_lang)}</label>
+                                            <input type="text" class="form-control" name="name" placeholder="{tr("sched_name_ph", current_lang)}" required>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label text-secondary small fw-bold">{tr("sched_start", current_lang)}</label>
+                                                <input type="time" class="form-control" name="start_time" value="08:00" required>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label text-secondary small fw-bold">{tr("sched_end", current_lang)}</label>
+                                                <input type="time" class="form-control" name="end_time" value="17:00" required>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label text-secondary small fw-bold">{tr("sched_sat_start", current_lang)}</label>
+                                                <input type="time" class="form-control" name="sat_start_time" value="11:00">
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label text-secondary small fw-bold">{tr("sched_sat_end", current_lang)}</label>
+                                                <input type="time" class="form-control" name="sat_end_time" value="15:00">
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label text-secondary small fw-bold">{tr("sched_tol", current_lang)}</label>
+                                            <input type="number" class="form-control" name="late_tolerance_minutes" value="30" required>
+                                        </div>
+                                        <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> {tr("sched_add_btn", current_lang)}</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-7">
+                            <div class="card h-100">
+                                <div class="card-header bg-dark text-white py-3">
+                                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-business-time me-2"></i> {tr("sched_list_title", current_lang)}</h5>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th class="ps-3">{tr("sched_col_name", current_lang)}</th>
+                                                    <th>{tr("sched_col_in", current_lang)}</th>
+                                                    <th>{tr("sched_col_out", current_lang)}</th>
+                                                    <th>{tr("sched_col_sat", current_lang)}</th>
+                                                    <th>{tr("sched_col_tol", current_lang)}</th>
+                                                    <th class="text-end pe-3">{tr("action", current_lang)}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {sched_rows_html}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ONGLET 3 : GESTION DES TERMINAUX -->
+                <div class="tab-pane fade" id="pane-devices" role="tabpanel">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-secondary text-white py-3 d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-network-wired me-2"></i> {tr("dev_title", current_lang)}</h5>
+                        </div>
+                        <div class="card-body bg-light border-bottom p-3">
+                            <form action="/devices/add" method="POST" class="row g-2 align-items-center">
+                                <div class="col-md-5">
+                                    <input type="text" class="form-control form-control-sm" name="device_key" placeholder="{tr("dev_key_ph", current_lang)}" required>
+                                </div>
+                                <div class="col-md-5">
+                                    <input type="text" class="form-control form-control-sm" name="friendly_name" placeholder="{tr("dev_name_ph", current_lang)}" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold"><i class="fa-solid fa-plus me-1"></i> {tr("add_btn", current_lang)}</button>
+                                </div>
+                            </form>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0">
                                     <thead>
                                         <tr>
-                                            <th class="ps-3">{tr("sched_col_name", current_lang)}</th>
-                                            <th>{tr("sched_col_in", current_lang)}</th>
-                                            <th>{tr("sched_col_out", current_lang)}</th>
-                                            <th>{tr("sched_col_tol", current_lang)}</th>
+                                            <th class="ps-3">{tr("dev_col_key", current_lang)}</th>
+                                            <th>{tr("dev_col_name", current_lang)}</th>
                                             <th class="text-end pe-3">{tr("action", current_lang)}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {sched_rows_html}
+                                        {dev_rows_html}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- SECTION TERMINAUX -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-secondary text-white py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-network-wired me-2"></i> {tr("dev_title", current_lang)}</h5>
-                </div>
-                <div class="card-body bg-light border-bottom p-3">
-                    <form action="/devices/add" method="POST" class="row g-2 align-items-center">
-                        <div class="col-md-5">
-                            <input type="text" class="form-control form-control-sm" name="device_key" placeholder="{tr("dev_key_ph", current_lang)}" required>
-                        </div>
-                        <div class="col-md-5">
-                            <input type="text" class="form-control form-control-sm" name="friendly_name" placeholder="{tr("dev_name_ph", current_lang)}" required>
-                        </div>
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold"><i class="fa-solid fa-plus me-1"></i> {tr("add_btn", current_lang)}</button>
-                        </div>
-                    </form>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead>
-                                <tr>
-                                    <th class="ps-3">{tr("dev_col_key", current_lang)}</th>
-                                    <th>{tr("dev_col_name", current_lang)}</th>
-                                    <th class="text-end pe-3">{tr("action", current_lang)}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {dev_rows_html}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SECTION EMPLOYÉS -->
-            <div class="row g-4">
-                <div class="col-lg-4">
-                    <div class="card">
-                        <div class="card-header bg-primary text-white py-3">
-                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-user-plus me-2"></i> {tr("emp_add_title", current_lang)}</h5>
+                <!-- ONGLET 4 : IMPORTATION MASSIVE EXCEL / CSV -->
+                <div class="tab-pane fade" id="pane-import" role="tabpanel">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-dark text-white py-3">
+                            <h5 class="mb-0 fs-6 fw-bold"><i class="fa-solid fa-file-excel me-2 text-success"></i> {tr("import_title", current_lang)}</h5>
                         </div>
                         <div class="card-body p-4">
-                            <form action="/employees/add" method="POST">
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("emp_badge", current_lang)}</label>
-                                    <input type="text" class="form-control" name="badge_or_card_id" placeholder="ex: 02132" required>
+                            <form action="/employees/import" method="POST" enctype="multipart/form-data" class="row g-3 align-items-center">
+                                <div class="col-md-8">
+                                    <label class="form-label text-secondary small fw-bold">{tr("import_label", current_lang)}</label>
+                                    <input type="file" class="form-control" name="file" accept=".xlsx, .xls, .csv" required>
+                                    <div class="form-text">
+                                        {tr("import_help", current_lang)} <code>badge</code>, <code>prenom</code>, <code>nom</code>, <code>departement</code>.
+                                    </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("emp_firstname", current_lang)}</label>
-                                    <input type="text" class="form-control" name="first_name" placeholder="ex: Jonathan" required>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-file-import me-2"></i> {tr("import_btn", current_lang)}</button>
                                 </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("emp_lastname", current_lang)}</label>
-                                    <input type="text" class="form-control" name="last_name" placeholder="ex: Lukoki" required>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("emp_dept", current_lang)}</label>
-                                    <input type="text" class="form-control" name="department" placeholder="ex: IT">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
-                                    <select class="form-select" name="schedule_id">
-                                        {sched_options_html}
-                                    </select>
-                                </div>
-                                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> {tr("emp_save_btn", current_lang)}</button>
                             </form>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-8">
-                    <div class="card mt-0">
-                        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> {tr("emp_list_title", current_lang)}</h5>
-                            <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("emp_summary_link", current_lang)}</a>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0">
-                                    <thead>
-                                        <tr>
-                                            <th class="ps-3">{tr("emp_col_badge", current_lang)}</th>
-                                            <th>{tr("emp_col_fullname", current_lang)}</th>
-                                            <th>{tr("emp_col_dept", current_lang)}</th>
-                                            <th>{tr("emp_col_sched", current_lang)}</th>
-                                            <th>{tr("emp_col_status", current_lang)}</th>
-                                            <th class="pe-3 text-end">{tr("emp_col_actions", current_lang)}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {emp_rows_html}
-                                    </tbody>
-                                </table>
-                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {{
+                const savedTab = localStorage.getItem("drhActiveTab");
+                if (savedTab) {{
+                    const triggerEl = document.querySelector('button[data-bs-target="' + savedTab + '"]');
+                    if (triggerEl) {{
+                        new bootstrap.Tab(triggerEl).show();
+                    }}
+                }}
+                document.querySelectorAll('#dashboardTabs button[data-bs-toggle="pill"]').forEach(function (btn) {{
+                    btn.addEventListener("shown.bs.tab", function (e) {{
+                        localStorage.setItem("drhActiveTab", e.target.getAttribute("data-bs-target"));
+                    }});
+                }});
+            }});
+        </script>
     </body>
     </html>
     """
@@ -1395,6 +1515,8 @@ async def add_schedule(
     name: str = Form(...),
     start_time: str = Form(...),
     end_time: str = Form(...),
+    sat_start_time: str = Form("11:00"),
+    sat_end_time: str = Form("15:00"),
     late_tolerance_minutes: int = Form(30),
     drh_session: str = Cookie(None)
 ):
@@ -1405,14 +1527,16 @@ async def add_schedule(
         return RedirectResponse(url="/supervisor", status_code=303)
     if role == "viewer":
         return RedirectResponse(url="/viewer-export" if role == "viewer" else "/summary", status_code=303)
+    sat_in_val = sat_start_time.strip() if sat_start_time and sat_start_time.strip() else "11:00"
+    sat_out_val = sat_end_time.strip() if sat_end_time and sat_end_time.strip() else "15:00"
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
-                VALUES (%s, %s, %s, %s)
-            """, (name.strip(), start_time, end_time, late_tolerance_minutes))
+                INSERT INTO work_schedules (name, start_time, end_time, sat_start_time, sat_end_time, late_tolerance_minutes)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (name.strip(), start_time, end_time, sat_in_val, sat_out_val, late_tolerance_minutes))
             conn.commit()
         conn.close()
     except Exception as e:
@@ -1618,6 +1742,8 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                     COALESCE(e.department, '-') as department,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
+                    s.sat_start_time,
+                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as punch_date,
                     l.punch_timestamp as exact_punch,
@@ -1649,6 +1775,8 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                         "last_name": r['last_name'],
                         "schedule_start": r['schedule_start'] or time(8, 0),
                         "schedule_end": r['schedule_end'] or time(17, 0),
+                        "sat_start_time": r.get('sat_start_time') or time(11, 0),
+                        "sat_end_time": r.get('sat_end_time') or time(15, 0),
                         "late_tolerance_minutes": r['late_tolerance_minutes'] if r['late_tolerance_minutes'] is not None else 30,
                         "punch_date": r['punch_date'],
                         "device_id": r['device_id'],
@@ -1667,6 +1795,8 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                     "last_name": data["last_name"],
                     "schedule_start": data["schedule_start"],
                     "schedule_end": data["schedule_end"],
+                    "sat_start_time": data["sat_start_time"],
+                    "sat_end_time": data["sat_end_time"],
                     "late_tolerance_minutes": data["late_tolerance_minutes"],
                     "punch_date": data["punch_date"],
                     "check_in_id": check_in_item[0],
@@ -1700,10 +1830,11 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
 
             del_id = row['check_out_id'] if row['check_out_id'] else row['check_in_id']
 
-            sched_start = row['schedule_start']
-            sched_end = row['schedule_end']
-            tolerance = row['late_tolerance_minutes']
             p_date = row['punch_date'] if isinstance(row['punch_date'], date) else date.today()
+            sched_start, sched_end = resolve_day_schedule(
+                p_date, row['schedule_start'], row['schedule_end'], row.get('sat_start_time'), row.get('sat_end_time')
+            )
+            tolerance = row['late_tolerance_minutes']
 
             if not check_in or not check_out or check_in == check_out:
                 report_rows_html += f"""
@@ -1961,6 +2092,8 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
                     COALESCE(e.department, '-') as department,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
+                    s.sat_start_time,
+                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as punch_date,
                     l.punch_timestamp as exact_punch,
@@ -1999,6 +2132,12 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
             emp_name = f"{r['first_name']} {r['last_name']}".strip()
             dev_display = mappings.get(r['device_id'], r['device_id'])
 
+            p_date = r['punch_date'] if isinstance(r['punch_date'], date) else date.today()
+            sched_start, sched_end = resolve_day_schedule(
+                p_date, r.get('schedule_start'), r.get('schedule_end'), r.get('sat_start_time'), r.get('sat_end_time')
+            )
+            tolerance = r['late_tolerance_minutes'] if r.get('late_tolerance_minutes') is not None else 30
+
             if not cin or not cout or cin == cout:
                 work_duration = "-"
                 status = tr("absent_inc", current_lang)
@@ -2008,7 +2147,11 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
                 hrs = total_seconds // 3600
                 mins = (total_seconds % 3600) // 60
                 work_duration = f"{hrs}h {mins:02d}m"
-                status = tr("present_ok", current_lang)
+                max_arr = datetime.combine(p_date, sched_start) + timedelta(minutes=tolerance)
+                if cin <= max_arr and cout.time() >= sched_end:
+                    status = tr("present_ok", current_lang)
+                else:
+                    status = tr("non_compliant", current_lang)
 
             export_data.append({
                 tr("excel_col_date", current_lang): str(r['punch_date']),
@@ -2078,6 +2221,8 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                     l.badge_or_card_id,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
+                    s.sat_start_time,
+                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as p_date,
                     MIN(l.punch_timestamp) as check_in,
@@ -2086,7 +2231,7 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                 LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
                 LEFT JOIN work_schedules s ON e.schedule_id = s.id
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
-                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
+                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.sat_start_time, s.sat_end_time, s.late_tolerance_minutes
             """
             cursor.execute(query, (unknown_label, start_date, end_date))
             raw_logs = cursor.fetchall()
@@ -2107,9 +2252,11 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
 
                 cin = row['check_in']
                 cout = row['check_out']
-                sched_start = row['schedule_start'] or time(8, 0)
-                tolerance = row['late_tolerance_minutes'] if row['late_tolerance_minutes'] is not None else 30
                 p_date = row['p_date'] if isinstance(row['p_date'], date) else date.today()
+                sched_start, _ = resolve_day_schedule(
+                    p_date, row['schedule_start'], row['schedule_end'], row.get('sat_start_time'), row.get('sat_end_time')
+                )
+                tolerance = row['late_tolerance_minutes'] if row['late_tolerance_minutes'] is not None else 30
 
                 if not cin or not cout or cin == cout:
                     emp_stats[badge]["absent_days"] += 1
@@ -2342,6 +2489,8 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
                     l.badge_or_card_id,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
+                    s.sat_start_time,
+                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as p_date,
                     MIN(l.punch_timestamp) as check_in,
@@ -2350,7 +2499,7 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
                 LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
                 LEFT JOIN work_schedules s ON e.schedule_id = s.id
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
-                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
+                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.sat_start_time, s.sat_end_time, s.late_tolerance_minutes
             """
             cursor.execute(query, (unknown_label, start_date, end_date))
             raw_logs = cursor.fetchall()
@@ -2550,7 +2699,9 @@ async def edit_employee_page(request: Request, badge_id: str, drh_session: str =
     sched_options_html = ""
     for s in schedules:
         sel = 'selected' if employee.get('schedule_id') == s['id'] else ''
-        sched_options_html += f'<option value="{s["id"]}" {sel}>{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
+        sat_in = str(s['sat_start_time'])[:5] if s.get('sat_start_time') else "11:00"
+        sat_out = str(s['sat_end_time'])[:5] if s.get('sat_end_time') else "15:00"
+        sched_options_html += f'<option value="{s["id"]}" {sel}>{s["name"]} ({str(s["start_time"])[:5]}-{str(s["end_time"])[:5]} | Sam {sat_in}-{sat_out})</option>'
 
     html_content = f"""
     <!DOCTYPE html>
