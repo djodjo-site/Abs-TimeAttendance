@@ -53,11 +53,11 @@ TRANSLATIONS = {
         "sched_start": "Heure d'arrivée",
         "sched_end": "Heure de départ",
         "sched_tol": "Tolérance de retard (minutes)",
-        "sched_sat_title": "Horaire spécifique du Samedi (optionnel)",
-        "sched_sat_start": "Arrivée Samedi",
-        "sched_sat_end": "Départ Samedi",
-        "sched_col_sat": "Samedi",
-        "sched_none_sat": "Identique / Repos",
+        "emp_sched_help": "Maintenez Ctrl (ou Cmd) pour sélectionner plusieurs horaires",
+        "emp_search_ph": "Rechercher par matricule, nom ou département...",
+        "page_prev": "Précédent",
+        "page_next": "Suivant",
+        "page_info": "Page",
         "tab_employees": "Gestion des Employés",
         "tab_schedules": "Gestion des Horaires",
         "tab_devices": "Gestion des Terminaux",
@@ -83,14 +83,14 @@ TRANSLATIONS = {
         "emp_firstname": "Prénom",
         "emp_lastname": "Nom",
         "emp_dept": "Département",
-        "emp_sched": "Horaire de travail assigné",
+        "emp_sched": "Horaires de travail assignés (1 ou plusieurs)",
         "emp_save_btn": "Enregistrer l'employé",
         "emp_list_title": "Liste des Employés",
         "emp_summary_link": "Voir la synthèse globale",
         "emp_col_badge": "Matricule / Badge",
         "emp_col_fullname": "Nom & Prénom",
         "emp_col_dept": "Département",
-        "emp_col_sched": "Horaire assigné",
+        "emp_col_sched": "Horaires assignés",
         "emp_col_status": "Statut",
         "emp_col_actions": "Actions",
         "emp_active": "Actif",
@@ -196,11 +196,11 @@ TRANSLATIONS = {
         "sched_start": "Check-in time",
         "sched_end": "Check-out time",
         "sched_tol": "Late tolerance (minutes)",
-        "sched_sat_title": "Specific Saturday Schedule (optional)",
-        "sched_sat_start": "Saturday Check-in",
-        "sched_sat_end": "Saturday Check-out",
-        "sched_col_sat": "Saturday",
-        "sched_none_sat": "Same / Off",
+        "emp_sched_help": "Hold Ctrl (or Cmd) to select multiple schedules",
+        "emp_search_ph": "Search by badge ID, name or department...",
+        "page_prev": "Previous",
+        "page_next": "Next",
+        "page_info": "Page",
         "tab_employees": "Employee Management",
         "tab_schedules": "Schedule Management",
         "tab_devices": "Device Management",
@@ -226,14 +226,14 @@ TRANSLATIONS = {
         "emp_firstname": "First name",
         "emp_lastname": "Last name",
         "emp_dept": "Department",
-        "emp_sched": "Assigned work schedule",
+        "emp_sched": "Assigned work schedules (1 or more)",
         "emp_save_btn": "Save employee",
         "emp_list_title": "Employee List",
         "emp_summary_link": "View global summary",
         "emp_col_badge": "Employee ID / Badge",
         "emp_col_fullname": "Full Name",
         "emp_col_dept": "Department",
-        "emp_col_sched": "Assigned schedule",
+        "emp_col_sched": "Assigned schedules",
         "emp_col_status": "Status",
         "emp_col_actions": "Actions",
         "emp_active": "Active",
@@ -430,47 +430,28 @@ def init_database_tables():
                 )
             """)
 
-            # Table des horaires de travail (avec horaire spécifique du samedi)
+            # Table des horaires de travail
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS work_schedules (
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(100) NOT NULL,
                     start_time TIME NOT NULL,
                     end_time TIME NOT NULL,
-                    sat_start_time TIME,
-                    sat_end_time TIME,
                     late_tolerance_minutes INT DEFAULT 30
                 )
             """)
 
-            cursor.execute("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'work_schedules' AND column_name = 'sat_start_time'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE work_schedules ADD COLUMN sat_start_time TIME DEFAULT '11:00:00'")
-
-            cursor.execute("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'work_schedules' AND column_name = 'sat_end_time'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE work_schedules ADD COLUMN sat_end_time TIME DEFAULT '15:00:00'")
-
-            # Insérer les horaires par défaut s'il n'en existe aucun
+            # Insérer l'horaire standard par défaut s'il n'en existe aucun (sans horaire samedi par défaut)
             cursor.execute("SELECT COUNT(*) as cnt FROM work_schedules")
             res = cursor.fetchone()
             if res and res['cnt'] == 0:
                 cursor.execute("""
-                    INSERT INTO work_schedules (name, start_time, end_time, sat_start_time, sat_end_time, late_tolerance_minutes)
+                    INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
                     VALUES
-                        ('Standard (Lun-Ven 08:00-17:00 | Sam 11:00-15:00)', '08:00:00', '17:00:00', '11:00:00', '15:00:00', 30),
-                        ('Samedi Uniquement (11:00 - 15:00)', '11:00:00', '15:00:00', '11:00:00', '15:00:00', 30)
+                        ('Horaire Standard (08:00 - 17:00)', '08:00:00', '17:00:00', 30)
                 """)
 
-            # Vérifier si la colonne schedule_id existe dans employees, sinon l'ajouter
+            # Vérifier si la colonne schedule_id existe dans employees, sinon l'ajouter (compatibilité)
             if _table_exists(cursor, "employees"):
                 cursor.execute("""
                     SELECT column_name
@@ -481,6 +462,24 @@ def init_database_tables():
                     cursor.execute("""
                         ALTER TABLE employees ADD COLUMN schedule_id INT REFERENCES work_schedules(id)
                     """)
+
+            # Table d'association plusieurs-à-plusieurs entre employés et horaires
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS employee_schedules (
+                    badge_or_card_id VARCHAR(100) REFERENCES employees(badge_or_card_id) ON DELETE CASCADE,
+                    schedule_id INT REFERENCES work_schedules(id) ON DELETE CASCADE,
+                    PRIMARY KEY (badge_or_card_id, schedule_id)
+                )
+            """)
+
+            # Migrer les anciens schedule_id uniques vers employee_schedules si non présents
+            cursor.execute("""
+                INSERT INTO employee_schedules (badge_or_card_id, schedule_id)
+                SELECT badge_or_card_id, schedule_id
+                FROM employees
+                WHERE schedule_id IS NOT NULL
+                ON CONFLICT DO NOTHING
+            """)
 
         conn.commit()
     except Exception as e:
@@ -499,11 +498,36 @@ def init_database_tables():
 
 
 
-def resolve_day_schedule(p_date, sched_start, sched_end, sat_start=None, sat_end=None):
+def select_best_schedule(schedules_list, p_date, check_in_dt=None, check_out_dt=None):
+    """Sélectionne l'horaire le plus adapté parmi les horaires assignés à un employé."""
+    if not schedules_list:
+        return (time(8, 0), time(17, 0), 30)
+    if len(schedules_list) == 1 or not check_in_dt:
+        s = schedules_list[0]
+        return (
+            s.get("start_time") or time(8, 0),
+            s.get("end_time") or time(17, 0),
+            s.get("late_tolerance_minutes") if s.get("late_tolerance_minutes") is not None else 30,
+        )
+
     d_obj = p_date if isinstance(p_date, date) else date.today()
-    if d_obj.weekday() == 5:  # Samedi
-        return (sat_start or time(11, 0), sat_end or time(15, 0))
-    return (sched_start or time(8, 0), sched_end or time(17, 0))
+    for s in schedules_list:
+        st = s.get("start_time") or time(8, 0)
+        et = s.get("end_time") or time(17, 0)
+        tol = s.get("late_tolerance_minutes") if s.get("late_tolerance_minutes") is not None else 30
+        max_arr = datetime.combine(d_obj, st) + timedelta(minutes=tol)
+        if check_in_dt <= max_arr and (check_out_dt is None or check_out_dt == check_in_dt or check_out_dt.time() >= et):
+            return (st, et, tol)
+
+    best_s = min(
+        schedules_list,
+        key=lambda s: abs((datetime.combine(d_obj, s.get("start_time") or time(8, 0)) - check_in_dt).total_seconds())
+    )
+    return (
+        best_s.get("start_time") or time(8, 0),
+        best_s.get("end_time") or time(17, 0),
+        best_s.get("late_tolerance_minutes") if best_s.get("late_tolerance_minutes") is not None else 30,
+    )
 
 @app.on_event("startup")
 async def startup_event():
@@ -525,7 +549,7 @@ async def login_page(request: Request, error: str = None, lang: str = Cookie(Non
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             body {{
-                background: linear-gradient(135deg, #1e293b, #0f172a);
+                background: linear-gradient(135deg, #232527 0%, #58595B 100%);
                 height: 100vh;
                 display: flex;
                 align-items: center;
@@ -641,13 +665,75 @@ async def supervisor_export_page(request: Request, start_date: str = None, end_d
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root {{
+                --hik-red: #D71920;
+                --hik-red-dark: #B01218;
+                --hik-grey: #58595B;
+                --hik-dark: #232527;
+                --hik-bg: #F4F5F7;
+            }}
             body {{
-                background-color: #f4f7f6;
+                background-color: var(--hik-bg);
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             }}
             .navbar {{
-                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid var(--hik-red);
             }}
+            .btn-primary {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .btn-primary:hover, .btn-primary:focus {{
+                background-color: var(--hik-red-dark) !important;
+                border-color: var(--hik-red-dark) !important;
+            }}
+            .btn-outline-primary {{
+                color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+            }}
+            .btn-outline-primary:hover {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .bg-primary {{
+                background-color: var(--hik-red) !important;
+            }}
+            .bg-secondary, .bg-dark {{
+                background-color: var(--hik-grey) !important;
+            }}
+            .text-primary {{
+                color: var(--hik-red) !important;
+            }}
+            .border-primary {{
+                border-color: var(--hik-red) !important;
+            }}
+            .nav-pills .nav-link {{
+                color: var(--hik-grey);
+            }}
+            .nav-pills .nav-link.active {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-item.active .page-link {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-link {{
+                color: var(--hik-grey);
+            }}
+            .page-link:hover {{
+                color: var(--hik-red);
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid #D71920;
+            }}
+            .bg-primary, .btn-primary {{ background-color: #D71920 !important; border-color: #D71920 !important; }}
+            .btn-primary:hover {{ background-color: #B01218 !important; border-color: #B01218 !important; }}
+            .text-primary {{ color: #D71920 !important; }}
             .card {{
                 border: none;
                 border-radius: 12px;
@@ -743,13 +829,75 @@ async def viewer_export_page(request: Request, start_date: str = None, end_date:
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root {{
+                --hik-red: #D71920;
+                --hik-red-dark: #B01218;
+                --hik-grey: #58595B;
+                --hik-dark: #232527;
+                --hik-bg: #F4F5F7;
+            }}
             body {{
-                background-color: #f4f7f6;
+                background-color: var(--hik-bg);
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             }}
             .navbar {{
-                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid var(--hik-red);
             }}
+            .btn-primary {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .btn-primary:hover, .btn-primary:focus {{
+                background-color: var(--hik-red-dark) !important;
+                border-color: var(--hik-red-dark) !important;
+            }}
+            .btn-outline-primary {{
+                color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+            }}
+            .btn-outline-primary:hover {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .bg-primary {{
+                background-color: var(--hik-red) !important;
+            }}
+            .bg-secondary, .bg-dark {{
+                background-color: var(--hik-grey) !important;
+            }}
+            .text-primary {{
+                color: var(--hik-red) !important;
+            }}
+            .border-primary {{
+                border-color: var(--hik-red) !important;
+            }}
+            .nav-pills .nav-link {{
+                color: var(--hik-grey);
+            }}
+            .nav-pills .nav-link.active {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-item.active .page-link {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-link {{
+                color: var(--hik-grey);
+            }}
+            .page-link:hover {{
+                color: var(--hik-red);
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid #D71920;
+            }}
+            .bg-primary, .btn-primary {{ background-color: #D71920 !important; border-color: #D71920 !important; }}
+            .btn-primary:hover {{ background-color: #B01218 !important; border-color: #B01218 !important; }}
+            .text-primary {{ color: #D71920 !important; }}
             .card {{
                 border: none;
                 border-radius: 12px;
@@ -843,14 +991,28 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            emp_sched_map = {}
             try:
                 cursor.execute("""
-                    SELECT e.*, s.name as schedule_name
+                    SELECT es.badge_or_card_id, ws.id, ws.name, ws.start_time, ws.end_time
+                    FROM employee_schedules es
+                    JOIN work_schedules ws ON es.schedule_id = ws.id
+                    ORDER BY ws.id ASC
+                """)
+                for row in cursor.fetchall():
+                    emp_sched_map.setdefault(row['badge_or_card_id'], []).append(row)
+            except Exception:
+                conn.rollback()
+
+            try:
+                cursor.execute("""
+                    SELECT e.*
                     FROM employees e
-                    LEFT JOIN work_schedules s ON e.schedule_id = s.id
                     ORDER BY e.first_name ASC
                 """)
                 employees = cursor.fetchall()
+                for emp in employees:
+                    emp['assigned_schedules'] = emp_sched_map.get(emp['badge_or_card_id'], [])
             except Exception:
                 conn.rollback()
                 employees = []
@@ -901,12 +1063,20 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
         for emp in employees:
             is_act = emp.get('is_active', True)
             status_badge = f'<span class="badge bg-success bg-opacity-10 text-success">{tr("emp_active", current_lang)}</span>' if is_act else f'<span class="badge bg-danger bg-opacity-10 text-danger">{tr("emp_inactive", current_lang)}</span>'
+            assigned = emp.get('assigned_schedules') or []
+            if assigned:
+                sched_badges = " ".join(
+                    f'<span class="badge bg-light text-dark border mb-1">{s["name"]} ({str(s["start_time"])[:5]}-{str(s["end_time"])[:5]})</span>'
+                    for s in assigned
+                )
+            else:
+                sched_badges = '<span class="badge bg-light text-secondary border">Standard (08:00-17:00)</span>'
             emp_rows_html += f"""
-                <tr>
+                <tr class="emp-row">
                     <td class="ps-3"><code>{emp['badge_or_card_id']}</code></td>
                     <td class="fw-semibold">{emp['first_name']} {emp['last_name']}</td>
                     <td>{emp.get('department') or '-'}</td>
-                    <td><span class="badge bg-light text-dark border">{emp.get('schedule_name') or 'Standard'}</span></td>
+                    <td>{sched_badges}</td>
                     <td>{status_badge}</td>
                     <td class="pe-3 text-end">
                         <a href="/employees/edit/{emp['badge_or_card_id']}" class="btn btn-sm btn-outline-primary me-1" title="{tr("emp_edit_header", current_lang)}"><i class="fa-solid fa-pen-to-square"></i></a>
@@ -916,24 +1086,21 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
             """
     else:
         emp_rows_html = f"""
-                <tr>
+                <tr id="empEmptyRow">
                     <td colspan="6" class="text-center py-4 text-muted">{tr("emp_none", current_lang)}</td>
                 </tr>
         """
 
     sched_rows_html = ""
     sched_options_html = ""
-    for s in schedules:
-        sat_in = str(s['sat_start_time'])[:5] if s.get('sat_start_time') else "11:00"
-        sat_out = str(s['sat_end_time'])[:5] if s.get('sat_end_time') else "15:00"
-        sat_label = f"{sat_in} - {sat_out}"
-        sched_options_html += f'<option value="{s["id"]}">{s["name"]} ({str(s["start_time"])[:5]}-{str(s["end_time"])[:5]} | Sam {sat_label})</option>'
+    for idx_s, s in enumerate(schedules):
+        sel_attr = "selected" if idx_s == 0 else ""
+        sched_options_html += f'<option value="{s["id"]}" {sel_attr}>{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
         sched_rows_html += f"""
             <tr>
                 <td class="ps-3 fw-semibold">{s['name']}</td>
                 <td><span class="badge bg-primary bg-opacity-10 text-primary">{str(s['start_time'])[:5]}</span></td>
                 <td><span class="badge bg-secondary bg-opacity-10 text-secondary">{str(s['end_time'])[:5]}</span></td>
-                <td><span class="badge bg-info bg-opacity-10 text-dark">{sat_label}</span></td>
                 <td>{s['late_tolerance_minutes']} min</td>
                 <td class="text-end pe-3">
                     <a href="/schedules/delete/{s['id']}" class="btn btn-sm btn-outline-danger" title="{tr("action", current_lang)}" onclick="return confirm('{tr("sched_del_confirm", current_lang)}');"><i class="fa-solid fa-trash"></i></a>
@@ -1098,13 +1265,75 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root {{
+                --hik-red: #D71920;
+                --hik-red-dark: #B01218;
+                --hik-grey: #58595B;
+                --hik-dark: #232527;
+                --hik-bg: #F4F5F7;
+            }}
             body {{
-                background-color: #f4f7f6;
+                background-color: var(--hik-bg);
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             }}
             .navbar {{
-                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid var(--hik-red);
             }}
+            .btn-primary {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .btn-primary:hover, .btn-primary:focus {{
+                background-color: var(--hik-red-dark) !important;
+                border-color: var(--hik-red-dark) !important;
+            }}
+            .btn-outline-primary {{
+                color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+            }}
+            .btn-outline-primary:hover {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .bg-primary {{
+                background-color: var(--hik-red) !important;
+            }}
+            .bg-secondary, .bg-dark {{
+                background-color: var(--hik-grey) !important;
+            }}
+            .text-primary {{
+                color: var(--hik-red) !important;
+            }}
+            .border-primary {{
+                border-color: var(--hik-red) !important;
+            }}
+            .nav-pills .nav-link {{
+                color: var(--hik-grey);
+            }}
+            .nav-pills .nav-link.active {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-item.active .page-link {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-link {{
+                color: var(--hik-grey);
+            }}
+            .page-link:hover {{
+                color: var(--hik-red);
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid #D71920;
+            }}
+            .bg-primary, .btn-primary {{ background-color: #D71920 !important; border-color: #D71920 !important; }}
+            .btn-primary:hover {{ background-color: #B01218 !important; border-color: #B01218 !important; }}
+            .text-primary {{ color: #D71920 !important; }}
             .card {{
                 border: none;
                 border-radius: 12px;
@@ -1236,9 +1465,10 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                         </div>
                                         <div class="mb-3">
                                             <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
-                                            <select class="form-select" name="schedule_id">
+                                            <select class="form-select" name="schedule_ids" multiple size="4">
                                                 {sched_options_html}
                                             </select>
+                                            <div class="form-text small">{tr("emp_sched_help", current_lang)}</div>
                                         </div>
                                         <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-check me-2"></i> {tr("emp_save_btn", current_lang)}</button>
                                     </form>
@@ -1248,13 +1478,22 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
 
                         <div class="col-lg-8">
                             <div class="card mt-0">
-                                <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> {tr("emp_list_title", current_lang)}</h5>
-                                    <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("emp_summary_link", current_lang)}</a>
+                                <div class="card-header py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                    <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="fa-solid fa-users-gear me-2 text-primary"></i> {tr("emp_list_title", current_lang)} <span class="badge bg-secondary ms-1" id="empFilteredCount">{len(employees)}</span></h5>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <input type="text" id="empSearchInput" class="form-control form-control-sm" style="min-width: 220px;" placeholder="{tr("emp_search_ph", current_lang)}">
+                                        <select id="empPageSize" class="form-select form-select-sm" style="width: auto;">
+                                            <option value="10" selected>10 / page</option>
+                                            <option value="25">25 / page</option>
+                                            <option value="50">50 / page</option>
+                                            <option value="100">100 / page</option>
+                                        </select>
+                                        <a href="/summary" class="btn btn-sm btn-outline-primary fw-semibold"><i class="fa-solid fa-chart-pie me-1"></i> {tr("emp_summary_link", current_lang)}</a>
+                                    </div>
                                 </div>
                                 <div class="card-body p-0">
                                     <div class="table-responsive">
-                                        <table class="table table-hover align-middle mb-0">
+                                        <table class="table table-hover align-middle mb-0" id="employeesTable">
                                             <thead>
                                                 <tr>
                                                     <th class="ps-3">{tr("emp_col_badge", current_lang)}</th>
@@ -1265,11 +1504,17 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                                     <th class="pe-3 text-end">{tr("emp_col_actions", current_lang)}</th>
                                                 </tr>
                                             </thead>
-                                            <tbody>
+                                            <tbody id="empTableBody">
                                                 {emp_rows_html}
                                             </tbody>
                                         </table>
                                     </div>
+                                </div>
+                                <div class="card-footer bg-white py-2 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                    <span class="text-muted small" id="empPageSummary"></span>
+                                    <nav aria-label="Pagination employés">
+                                        <ul class="pagination pagination-sm mb-0" id="empPagination"></ul>
+                                    </nav>
                                 </div>
                             </div>
                         </div>
@@ -1300,21 +1545,11 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                                 <input type="time" class="form-control" name="end_time" value="17:00" required>
                                             </div>
                                         </div>
-                                        <div class="row">
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label text-secondary small fw-bold">{tr("sched_sat_start", current_lang)}</label>
-                                                <input type="time" class="form-control" name="sat_start_time" value="11:00">
-                                            </div>
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label text-secondary small fw-bold">{tr("sched_sat_end", current_lang)}</label>
-                                                <input type="time" class="form-control" name="sat_end_time" value="15:00">
-                                            </div>
-                                        </div>
                                         <div class="mb-3">
                                             <label class="form-label text-secondary small fw-bold">{tr("sched_tol", current_lang)}</label>
                                             <input type="number" class="form-control" name="late_tolerance_minutes" value="30" required>
                                         </div>
-                                        <button type="submit" class="btn btn-success w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> {tr("sched_add_btn", current_lang)}</button>
+                                        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm"><i class="fa-solid fa-plus me-2"></i> {tr("sched_add_btn", current_lang)}</button>
                                     </form>
                                 </div>
                             </div>
@@ -1332,7 +1567,6 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                                                     <th class="ps-3">{tr("sched_col_name", current_lang)}</th>
                                                     <th>{tr("sched_col_in", current_lang)}</th>
                                                     <th>{tr("sched_col_out", current_lang)}</th>
-                                                    <th>{tr("sched_col_sat", current_lang)}</th>
                                                     <th>{tr("sched_col_tol", current_lang)}</th>
                                                     <th class="text-end pe-3">{tr("action", current_lang)}</th>
                                                 </tr>
@@ -1425,6 +1659,88 @@ async def dashboard(request: Request, error: str = None, success: str = None, dr
                         localStorage.setItem("drhActiveTab", e.target.getAttribute("data-bs-target"));
                     }});
                 }});
+
+                // Pagination & Recherche Employés
+                const allRows = Array.from(document.querySelectorAll("#empTableBody tr.emp-row"));
+                const searchInput = document.getElementById("empSearchInput");
+                const pageSizeSelect = document.getElementById("empPageSize");
+                const paginationEl = document.getElementById("empPagination");
+                const pageSummaryEl = document.getElementById("empPageSummary");
+                const filteredCountEl = document.getElementById("empFilteredCount");
+                let currentPage = 1;
+
+                function renderEmployeePage() {{
+                    if (!paginationEl) return;
+                    const q = (searchInput ? searchInput.value : "").trim().toLowerCase();
+                    const pageSize = parseInt(pageSizeSelect ? pageSizeSelect.value : "10", 10) || 10;
+
+                    const filtered = allRows.filter(row => !q || row.textContent.toLowerCase().includes(q));
+                    if (filteredCountEl) filteredCountEl.textContent = filtered.length;
+
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+                    if (currentPage > totalPages) currentPage = totalPages;
+
+                    const startIdx = (currentPage - 1) * pageSize;
+                    const endIdx = startIdx + pageSize;
+
+                    allRows.forEach(r => r.style.display = "none");
+                    filtered.slice(startIdx, endIdx).forEach(r => r.style.display = "");
+
+                    if (pageSummaryEl) {{
+                        const fromNum = filtered.length === 0 ? 0 : startIdx + 1;
+                        const toNum = Math.min(endIdx, filtered.length);
+                        pageSummaryEl.textContent = `${{fromNum}} - ${{toNum}} / ${{filtered.length}}`;
+                    }}
+
+                    paginationEl.innerHTML = "";
+                    if (filtered.length === 0) return;
+
+                    const addPageBtn = (label, pageNum, disabled, active) => {{
+                        const li = document.createElement("li");
+                        li.className = "page-item" + (disabled ? " disabled" : "") + (active ? " active" : "");
+                        const a = document.createElement("a");
+                        a.className = "page-link";
+                        a.href = "#";
+                        a.textContent = label;
+                        a.addEventListener("click", function (e) {{
+                            e.preventDefault();
+                            if (!disabled && currentPage !== pageNum) {{
+                                currentPage = pageNum;
+                                renderEmployeePage();
+                            }}
+                        }});
+                        li.appendChild(a);
+                        paginationEl.appendChild(li);
+                    }};
+
+                    addPageBtn("«", currentPage - 1, currentPage === 1, false);
+
+                    let startPage = Math.max(1, currentPage - 2);
+                    let endPage = Math.min(totalPages, startPage + 4);
+                    if (endPage - startPage < 4) {{
+                        startPage = Math.max(1, endPage - 4);
+                    }}
+
+                    for (let p = startPage; p <= endPage; p++) {{
+                        addPageBtn(String(p), p, false, p === currentPage);
+                    }}
+
+                    addPageBtn("»", currentPage + 1, currentPage === totalPages, false);
+                }}
+
+                if (searchInput) {{
+                    searchInput.addEventListener("input", function () {{
+                        currentPage = 1;
+                        renderEmployeePage();
+                    }});
+                }}
+                if (pageSizeSelect) {{
+                    pageSizeSelect.addEventListener("change", function () {{
+                        currentPage = 1;
+                        renderEmployeePage();
+                    }});
+                }}
+                renderEmployeePage();
             }});
         </script>
     </body>
@@ -1515,8 +1831,6 @@ async def add_schedule(
     name: str = Form(...),
     start_time: str = Form(...),
     end_time: str = Form(...),
-    sat_start_time: str = Form("11:00"),
-    sat_end_time: str = Form("15:00"),
     late_tolerance_minutes: int = Form(30),
     drh_session: str = Cookie(None)
 ):
@@ -1527,16 +1841,14 @@ async def add_schedule(
         return RedirectResponse(url="/supervisor", status_code=303)
     if role == "viewer":
         return RedirectResponse(url="/viewer-export" if role == "viewer" else "/summary", status_code=303)
-    sat_in_val = sat_start_time.strip() if sat_start_time and sat_start_time.strip() else "11:00"
-    sat_out_val = sat_end_time.strip() if sat_end_time and sat_end_time.strip() else "15:00"
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO work_schedules (name, start_time, end_time, sat_start_time, sat_end_time, late_tolerance_minutes)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (name.strip(), start_time, end_time, sat_in_val, sat_out_val, late_tolerance_minutes))
+                INSERT INTO work_schedules (name, start_time, end_time, late_tolerance_minutes)
+                VALUES (%s, %s, %s, %s)
+            """, (name.strip(), start_time, end_time, late_tolerance_minutes))
             conn.commit()
         conn.close()
     except Exception as e:
@@ -1563,6 +1875,7 @@ async def delete_schedule(sched_id: int, drh_session: str = Cookie(None)):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM employee_schedules WHERE schedule_id = %s", (sched_id,))
             cursor.execute("UPDATE employees SET schedule_id = NULL WHERE schedule_id = %s", (sched_id,))
             cursor.execute("DELETE FROM work_schedules WHERE id = %s", (sched_id,))
             conn.commit()
@@ -1733,6 +2046,16 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             cursor.execute("SELECT DISTINCT device_id FROM attendance_raw_logs WHERE device_id IS NOT NULL ORDER BY device_id")
             devices = [{"key": row['device_id'], "name": mappings.get(row['device_id'], row['device_id'])} for row in cursor.fetchall()]
 
+            cursor.execute("""
+                SELECT es.badge_or_card_id, ws.start_time, ws.end_time, ws.late_tolerance_minutes
+                FROM employee_schedules es
+                JOIN work_schedules ws ON es.schedule_id = ws.id
+                ORDER BY ws.id ASC
+            """)
+            emp_scheds_lookup = {}
+            for srow in cursor.fetchall():
+                emp_scheds_lookup.setdefault(srow['badge_or_card_id'], []).append(srow)
+
             base_query = """
                 SELECT
                     l.id,
@@ -1742,8 +2065,6 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                     COALESCE(e.department, '-') as department,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
-                    s.sat_start_time,
-                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as punch_date,
                     l.punch_timestamp as exact_punch,
@@ -1769,15 +2090,18 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             for r in raw_logs:
                 key = (r['badge_or_card_id'], str(r['punch_date']), r['device_id'])
                 if key not in grouped:
+                    assigned_list = emp_scheds_lookup.get(r['badge_or_card_id'])
+                    if not assigned_list and r.get('schedule_start'):
+                        assigned_list = [{
+                            "start_time": r['schedule_start'],
+                            "end_time": r['schedule_end'],
+                            "late_tolerance_minutes": r['late_tolerance_minutes'],
+                        }]
                     grouped[key] = {
                         "badge_or_card_id": r['badge_or_card_id'],
                         "first_name": r['first_name'],
                         "last_name": r['last_name'],
-                        "schedule_start": r['schedule_start'] or time(8, 0),
-                        "schedule_end": r['schedule_end'] or time(17, 0),
-                        "sat_start_time": r.get('sat_start_time') or time(11, 0),
-                        "sat_end_time": r.get('sat_end_time') or time(15, 0),
-                        "late_tolerance_minutes": r['late_tolerance_minutes'] if r['late_tolerance_minutes'] is not None else 30,
+                        "assigned_schedules": assigned_list or [],
                         "punch_date": r['punch_date'],
                         "device_id": r['device_id'],
                         "timestamps": []
@@ -1793,11 +2117,7 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
                     "badge_or_card_id": data["badge_or_card_id"],
                     "first_name": data["first_name"],
                     "last_name": data["last_name"],
-                    "schedule_start": data["schedule_start"],
-                    "schedule_end": data["schedule_end"],
-                    "sat_start_time": data["sat_start_time"],
-                    "sat_end_time": data["sat_end_time"],
-                    "late_tolerance_minutes": data["late_tolerance_minutes"],
+                    "assigned_schedules": data["assigned_schedules"],
                     "punch_date": data["punch_date"],
                     "check_in_id": check_in_item[0],
                     "check_in": check_in_item[1],
@@ -1831,10 +2151,9 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
             del_id = row['check_out_id'] if row['check_out_id'] else row['check_in_id']
 
             p_date = row['punch_date'] if isinstance(row['punch_date'], date) else date.today()
-            sched_start, sched_end = resolve_day_schedule(
-                p_date, row['schedule_start'], row['schedule_end'], row.get('sat_start_time'), row.get('sat_end_time')
+            sched_start, sched_end, tolerance = select_best_schedule(
+                row.get('assigned_schedules'), p_date, check_in, check_out
             )
-            tolerance = row['late_tolerance_minutes']
 
             if not check_in or not check_out or check_in == check_out:
                 report_rows_html += f"""
@@ -1921,13 +2240,75 @@ async def attendance_reports(request: Request, start_date: str = None, end_date:
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root {{
+                --hik-red: #D71920;
+                --hik-red-dark: #B01218;
+                --hik-grey: #58595B;
+                --hik-dark: #232527;
+                --hik-bg: #F4F5F7;
+            }}
             body {{
-                background-color: #f4f7f6;
+                background-color: var(--hik-bg);
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             }}
             .navbar {{
-                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid var(--hik-red);
             }}
+            .btn-primary {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .btn-primary:hover, .btn-primary:focus {{
+                background-color: var(--hik-red-dark) !important;
+                border-color: var(--hik-red-dark) !important;
+            }}
+            .btn-outline-primary {{
+                color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+            }}
+            .btn-outline-primary:hover {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .bg-primary {{
+                background-color: var(--hik-red) !important;
+            }}
+            .bg-secondary, .bg-dark {{
+                background-color: var(--hik-grey) !important;
+            }}
+            .text-primary {{
+                color: var(--hik-red) !important;
+            }}
+            .border-primary {{
+                border-color: var(--hik-red) !important;
+            }}
+            .nav-pills .nav-link {{
+                color: var(--hik-grey);
+            }}
+            .nav-pills .nav-link.active {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-item.active .page-link {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-link {{
+                color: var(--hik-grey);
+            }}
+            .page-link:hover {{
+                color: var(--hik-red);
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid #D71920;
+            }}
+            .bg-primary, .btn-primary {{ background-color: #D71920 !important; border-color: #D71920 !important; }}
+            .btn-primary:hover {{ background-color: #B01218 !important; border-color: #B01218 !important; }}
+            .text-primary {{ color: #D71920 !important; }}
             .card {{
                 border: none;
                 border-radius: 12px;
@@ -2084,6 +2465,16 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
             cursor.execute("SELECT * FROM devices_mapping")
             mappings = {row['device_key']: row['friendly_name'] for row in cursor.fetchall()}
 
+            cursor.execute("""
+                SELECT es.badge_or_card_id, ws.start_time, ws.end_time, ws.late_tolerance_minutes
+                FROM employee_schedules es
+                JOIN work_schedules ws ON es.schedule_id = ws.id
+                ORDER BY ws.id ASC
+            """)
+            emp_scheds_lookup = {}
+            for srow in cursor.fetchall():
+                emp_scheds_lookup.setdefault(srow['badge_or_card_id'], []).append(srow)
+
             base_query = """
                 SELECT
                     l.badge_or_card_id,
@@ -2092,8 +2483,6 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
                     COALESCE(e.department, '-') as department,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
-                    s.sat_start_time,
-                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as punch_date,
                     l.punch_timestamp as exact_punch,
@@ -2133,10 +2522,14 @@ async def export_reports_excel(request: Request, start_date: str = None, end_dat
             dev_display = mappings.get(r['device_id'], r['device_id'])
 
             p_date = r['punch_date'] if isinstance(r['punch_date'], date) else date.today()
-            sched_start, sched_end = resolve_day_schedule(
-                p_date, r.get('schedule_start'), r.get('schedule_end'), r.get('sat_start_time'), r.get('sat_end_time')
-            )
-            tolerance = r['late_tolerance_minutes'] if r.get('late_tolerance_minutes') is not None else 30
+            assigned_list = emp_scheds_lookup.get(r['badge_or_card_id'])
+            if not assigned_list and r.get('schedule_start'):
+                assigned_list = [{
+                    "start_time": r['schedule_start'],
+                    "end_time": r['schedule_end'],
+                    "late_tolerance_minutes": r['late_tolerance_minutes'],
+                }]
+            sched_start, sched_end, tolerance = select_best_schedule(assigned_list, p_date, cin, cout)
 
             if not cin or not cout or cin == cout:
                 work_duration = "-"
@@ -2214,6 +2607,16 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT es.badge_or_card_id, ws.start_time, ws.end_time, ws.late_tolerance_minutes
+                FROM employee_schedules es
+                JOIN work_schedules ws ON es.schedule_id = ws.id
+                ORDER BY ws.id ASC
+            """)
+            emp_scheds_lookup = {}
+            for srow in cursor.fetchall():
+                emp_scheds_lookup.setdefault(srow['badge_or_card_id'], []).append(srow)
+
             query = """
                 SELECT
                     COALESCE(e.first_name, %s) as first_name,
@@ -2221,8 +2624,6 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                     l.badge_or_card_id,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
-                    s.sat_start_time,
-                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as p_date,
                     MIN(l.punch_timestamp) as check_in,
@@ -2231,7 +2632,7 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                 LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
                 LEFT JOIN work_schedules s ON e.schedule_id = s.id
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
-                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.sat_start_time, s.sat_end_time, s.late_tolerance_minutes
+                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
             """
             cursor.execute(query, (unknown_label, start_date, end_date))
             raw_logs = cursor.fetchall()
@@ -2253,10 +2654,14 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
                 cin = row['check_in']
                 cout = row['check_out']
                 p_date = row['p_date'] if isinstance(row['p_date'], date) else date.today()
-                sched_start, _ = resolve_day_schedule(
-                    p_date, row['schedule_start'], row['schedule_end'], row.get('sat_start_time'), row.get('sat_end_time')
-                )
-                tolerance = row['late_tolerance_minutes'] if row['late_tolerance_minutes'] is not None else 30
+                assigned_list = emp_scheds_lookup.get(badge)
+                if not assigned_list and row.get('schedule_start'):
+                    assigned_list = [{
+                        "start_time": row['schedule_start'],
+                        "end_time": row['schedule_end'],
+                        "late_tolerance_minutes": row['late_tolerance_minutes'],
+                    }]
+                sched_start, _, tolerance = select_best_schedule(assigned_list, p_date, cin, cout)
 
                 if not cin or not cout or cin == cout:
                     emp_stats[badge]["absent_days"] += 1
@@ -2330,13 +2735,75 @@ async def attendance_summary(request: Request, start_date: str = None, end_date:
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root {{
+                --hik-red: #D71920;
+                --hik-red-dark: #B01218;
+                --hik-grey: #58595B;
+                --hik-dark: #232527;
+                --hik-bg: #F4F5F7;
+            }}
             body {{
-                background-color: #f4f7f6;
+                background-color: var(--hik-bg);
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             }}
             .navbar {{
-                background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid var(--hik-red);
             }}
+            .btn-primary {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .btn-primary:hover, .btn-primary:focus {{
+                background-color: var(--hik-red-dark) !important;
+                border-color: var(--hik-red-dark) !important;
+            }}
+            .btn-outline-primary {{
+                color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+            }}
+            .btn-outline-primary:hover {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .bg-primary {{
+                background-color: var(--hik-red) !important;
+            }}
+            .bg-secondary, .bg-dark {{
+                background-color: var(--hik-grey) !important;
+            }}
+            .text-primary {{
+                color: var(--hik-red) !important;
+            }}
+            .border-primary {{
+                border-color: var(--hik-red) !important;
+            }}
+            .nav-pills .nav-link {{
+                color: var(--hik-grey);
+            }}
+            .nav-pills .nav-link.active {{
+                background-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-item.active .page-link {{
+                background-color: var(--hik-red) !important;
+                border-color: var(--hik-red) !important;
+                color: #ffffff !important;
+            }}
+            .page-link {{
+                color: var(--hik-grey);
+            }}
+            .page-link:hover {{
+                color: var(--hik-red);
+            }}
+            .navbar {{
+                background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important;
+                border-bottom: 3px solid #D71920;
+            }}
+            .bg-primary, .btn-primary {{ background-color: #D71920 !important; border-color: #D71920 !important; }}
+            .btn-primary:hover {{ background-color: #B01218 !important; border-color: #B01218 !important; }}
+            .text-primary {{ color: #D71920 !important; }}
             .card {{
                 border: none;
                 border-radius: 12px;
@@ -2482,6 +2949,16 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT es.badge_or_card_id, ws.start_time, ws.end_time, ws.late_tolerance_minutes
+                FROM employee_schedules es
+                JOIN work_schedules ws ON es.schedule_id = ws.id
+                ORDER BY ws.id ASC
+            """)
+            emp_scheds_lookup = {}
+            for srow in cursor.fetchall():
+                emp_scheds_lookup.setdefault(srow['badge_or_card_id'], []).append(srow)
+
             query = """
                 SELECT
                     COALESCE(e.first_name, %s) as first_name,
@@ -2489,8 +2966,6 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
                     l.badge_or_card_id,
                     s.start_time as schedule_start,
                     s.end_time as schedule_end,
-                    s.sat_start_time,
-                    s.sat_end_time,
                     s.late_tolerance_minutes,
                     DATE(l.punch_timestamp) as p_date,
                     MIN(l.punch_timestamp) as check_in,
@@ -2499,7 +2974,7 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
                 LEFT JOIN employees e ON l.badge_or_card_id = e.badge_or_card_id
                 LEFT JOIN work_schedules s ON e.schedule_id = s.id
                 WHERE DATE(l.punch_timestamp) BETWEEN %s AND %s
-                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.sat_start_time, s.sat_end_time, s.late_tolerance_minutes
+                GROUP BY l.badge_or_card_id, DATE(l.punch_timestamp), e.first_name, e.last_name, s.start_time, s.end_time, s.late_tolerance_minutes
             """
             cursor.execute(query, (unknown_label, start_date, end_date))
             raw_logs = cursor.fetchall()
@@ -2521,9 +2996,15 @@ async def export_summary_excel(request: Request, start_date: str = None, end_dat
 
             cin = row['check_in']
             cout = row['check_out']
-            sched_start = row['schedule_start'] or time(8, 0)
-            tolerance = row['late_tolerance_minutes'] if row['late_tolerance_minutes'] is not None else 30
             p_date = row['p_date'] if isinstance(row['p_date'], date) else date.today()
+            assigned_list = emp_scheds_lookup.get(badge)
+            if not assigned_list and row.get('schedule_start'):
+                assigned_list = [{
+                    "start_time": row['schedule_start'],
+                    "end_time": row['schedule_end'],
+                    "late_tolerance_minutes": row['late_tolerance_minutes'],
+                }]
+            sched_start, _, tolerance = select_best_schedule(assigned_list, p_date, cin, cout)
 
             if not cin or not cout or cin == cout:
                 emp_stats[badge]["absent_days"] += 1
@@ -2582,7 +3063,7 @@ async def add_employee(
     first_name: str = Form(...),
     last_name: str = Form(...),
     department: str = Form(None),
-    schedule_id: int = Form(None),
+    schedule_ids: list[int] = Form(default=[]),
     drh_session: str = Cookie(None)
 ):
     role = get_session_role(drh_session)
@@ -2593,6 +3074,8 @@ async def add_employee(
     if role == "viewer":
         return RedirectResponse(url="/viewer-export" if role == "viewer" else "/summary", status_code=303)
 
+    clean_badge = badge_or_card_id.strip()
+    primary_sched_id = schedule_ids[0] if schedule_ids else None
     conn = None
     try:
         conn = get_db_connection()
@@ -2609,14 +3092,20 @@ async def add_employee(
                     is_active = EXCLUDED.is_active
                 """,
                 (
-                    badge_or_card_id.strip(),
+                    clean_badge,
                     first_name.strip(),
                     last_name.strip(),
                     department.strip() if department else None,
-                    schedule_id,
+                    primary_sched_id,
                     True
                 )
             )
+            cursor.execute("DELETE FROM employee_schedules WHERE badge_or_card_id = %s", (clean_badge,))
+            for sid in set(schedule_ids):
+                cursor.execute(
+                    "INSERT INTO employee_schedules (badge_or_card_id, schedule_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (clean_badge, sid)
+                )
             conn.commit()
         conn.close()
     except Exception as e:
@@ -2645,6 +3134,7 @@ async def delete_employee(badge_id: str, drh_session: str = Cookie(None)):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM employee_schedules WHERE badge_or_card_id = %s", (badge_id,))
             cursor.execute("DELETE FROM attendance_raw_logs WHERE badge_or_card_id = %s", (badge_id,))
             cursor.execute("DELETE FROM employees WHERE badge_or_card_id = %s", (badge_id,))
             conn.commit()
@@ -2674,12 +3164,18 @@ async def edit_employee_page(request: Request, badge_id: str, drh_session: str =
     current_lang = get_lang(request, lang)
     employee = None
     schedules = []
+    assigned_ids = set()
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM employees WHERE badge_or_card_id = %s", (badge_id,))
             employee = cursor.fetchone()
+
+            cursor.execute("SELECT schedule_id FROM employee_schedules WHERE badge_or_card_id = %s", (badge_id,))
+            assigned_ids = {r['schedule_id'] for r in cursor.fetchall()}
+            if not assigned_ids and employee and employee.get('schedule_id'):
+                assigned_ids.add(employee['schedule_id'])
 
             cursor.execute("SELECT * FROM work_schedules ORDER BY id ASC")
             schedules = cursor.fetchall()
@@ -2698,10 +3194,8 @@ async def edit_employee_page(request: Request, badge_id: str, drh_session: str =
 
     sched_options_html = ""
     for s in schedules:
-        sel = 'selected' if employee.get('schedule_id') == s['id'] else ''
-        sat_in = str(s['sat_start_time'])[:5] if s.get('sat_start_time') else "11:00"
-        sat_out = str(s['sat_end_time'])[:5] if s.get('sat_end_time') else "15:00"
-        sched_options_html += f'<option value="{s["id"]}" {sel}>{s["name"]} ({str(s["start_time"])[:5]}-{str(s["end_time"])[:5]} | Sam {sat_in}-{sat_out})</option>'
+        sel = 'selected' if s['id'] in assigned_ids else ''
+        sched_options_html += f'<option value="{s["id"]}" {sel}>{s["name"]} ({str(s["start_time"])[:5]} - {str(s["end_time"])[:5]})</option>'
 
     html_content = f"""
     <!DOCTYPE html>
@@ -2713,9 +3207,11 @@ async def edit_employee_page(request: Request, badge_id: str, drh_session: str =
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
-            body {{ background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
-            .navbar {{ background: linear-gradient(135deg, #1e293b, #0f172a) !important; }}
+            body {{ background-color: #f4f5f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
+            .navbar {{ background: linear-gradient(135deg, #232527 0%, #3A3D40 100%) !important; border-bottom: 3px solid #D71920; }}
             .card {{ border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }}
+            .bg-primary, .btn-primary {{ background-color: #D71920 !important; border-color: #D71920 !important; }}
+            .btn-primary:hover {{ background-color: #B01218 !important; border-color: #B01218 !important; }}
         </style>
     </head>
     <body>
@@ -2754,9 +3250,10 @@ async def edit_employee_page(request: Request, badge_id: str, drh_session: str =
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-secondary small fw-bold">{tr("emp_sched", current_lang)}</label>
-                            <select class="form-select" name="schedule_id">
+                            <select class="form-select" name="schedule_ids" multiple size="5">
                                 {sched_options_html}
                             </select>
+                            <div class="form-text small">{tr("emp_sched_help", current_lang)}</div>
                         </div>
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="is_active" name="is_active" value="true" {'checked' if employee.get('is_active') else ''}>
@@ -2783,7 +3280,7 @@ async def update_employee(
     first_name: str = Form(...),
     last_name: str = Form(...),
     department: str = Form(None),
-    schedule_id: int = Form(None),
+    schedule_ids: list[int] = Form(default=[]),
     is_active: str = Form(None),
     drh_session: str = Cookie(None)
 ):
@@ -2796,10 +3293,13 @@ async def update_employee(
         return RedirectResponse(url="/viewer-export" if role == "viewer" else "/summary", status_code=303)
 
     is_active_bool = True if is_active == "true" else False
+    new_badge = badge_or_card_id.strip()
+    primary_sched_id = schedule_ids[0] if schedule_ids else None
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM employee_schedules WHERE badge_or_card_id = %s", (old_badge_id,))
             cursor.execute(
                 """
                 UPDATE employees
@@ -2807,15 +3307,20 @@ async def update_employee(
                 WHERE badge_or_card_id = %s
                 """,
                 (
-                    badge_or_card_id.strip(),
+                    new_badge,
                     first_name.strip(),
                     last_name.strip(),
                     department.strip() if department else None,
-                    schedule_id,
+                    primary_sched_id,
                     is_active_bool,
                     old_badge_id
                 )
             )
+            for sid in set(schedule_ids):
+                cursor.execute(
+                    "INSERT INTO employee_schedules (badge_or_card_id, schedule_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (new_badge, sid)
+                )
             conn.commit()
         conn.close()
     except Exception as e:
