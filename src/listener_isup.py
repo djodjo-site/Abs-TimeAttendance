@@ -16,6 +16,160 @@ from database.db_config import get_db_connection
 
 app = FastAPI(title="Hikvision Attendance System")
 
+# ---------------------------------------------------------------------------
+# DESIGN GLOBAL - TIME ATTENDANCE
+# Injection commune sur toutes les pages HTML (connexion, dashboard, rapports).
+# Les styles spécifiques existants et les règles d'impression sont conservés.
+# ---------------------------------------------------------------------------
+GLOBAL_DESIGN_CSS = """
+<style id="time-attendance-design">
+:root {
+  --ta-ink: #172033;
+  --ta-muted: #68758a;
+  --ta-bg: #f3f6fb;
+  --ta-surface: #ffffff;
+  --ta-border: #e5eaf2;
+  --ta-primary: #d71920;
+  --ta-primary-dark: #ae1118;
+  --ta-navy: #18243a;
+  --ta-radius: 16px;
+  --ta-shadow: 0 8px 28px rgba(24, 36, 58, .07);
+}
+html { scroll-behavior: smooth; }
+body {
+  color: var(--ta-ink);
+  background: var(--ta-bg);
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  line-height: 1.55;
+}
+::selection { background: rgba(215,25,32,.15); }
+.navbar {
+  min-height: 68px;
+  background: linear-gradient(115deg, #151f32, #263651) !important;
+  border-bottom: 3px solid var(--ta-primary) !important;
+  box-shadow: 0 5px 20px rgba(16, 24, 40, .12);
+}
+.navbar .navbar-brand { letter-spacing: -.02em; white-space: normal; }
+.container-fluid { max-width: 1600px; }
+.card {
+  border: 1px solid var(--ta-border) !important;
+  border-radius: var(--ta-radius) !important;
+  background: var(--ta-surface);
+  box-shadow: var(--ta-shadow) !important;
+  overflow: hidden;
+}
+.card-header {
+  padding: 1rem 1.25rem !important;
+  border-bottom: 1px solid var(--ta-border) !important;
+  background: #fff !important;
+  color: var(--ta-ink);
+}
+.card-header.bg-primary, .card-header.bg-success,
+.card-header.bg-dark, .card-header.bg-secondary {
+  color: #fff !important;
+  border-bottom: 0 !important;
+}
+.card-body { padding: 1.25rem; }
+.btn {
+  border-radius: 10px;
+  font-weight: 600;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-primary, .bg-primary {
+  background-color: var(--ta-primary) !important;
+  border-color: var(--ta-primary) !important;
+}
+.btn-primary:hover { background-color: var(--ta-primary-dark) !important; }
+.btn-outline-primary { color: var(--ta-primary) !important; border-color: #e7a2a5 !important; }
+.btn-outline-primary:hover { color: #fff !important; background: var(--ta-primary) !important; }
+.btn-success { background: #13865b; border-color: #13865b; }
+.form-control, .form-select, .input-group-text {
+  min-height: 42px;
+  border-radius: 10px;
+  border-color: #dce3ed;
+}
+.form-control:focus, .form-select:focus {
+  border-color: rgba(215,25,32,.55);
+  box-shadow: 0 0 0 .2rem rgba(215,25,32,.10);
+}
+.form-label { margin-bottom: .45rem; color: #46536a !important; }
+.table-responsive { border-radius: 12px; }
+.table { vertical-align: middle; margin-bottom: 0; }
+.table thead th, .table th {
+  padding-top: .85rem;
+  padding-bottom: .85rem;
+  color: #536178 !important;
+  background: #f5f7fb !important;
+  border-bottom: 1px solid var(--ta-border);
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+  white-space: nowrap;
+}
+.table td { padding-top: .8rem; padding-bottom: .8rem; border-color: #edf0f5; }
+.table tbody tr:hover { background: #fafbfe; }
+.badge { border-radius: 999px; font-weight: 650; letter-spacing: .01em; }
+.alert { border: 0; border-radius: 12px; }
+.pagination .page-link { border-radius: 8px; margin: 0 2px; }
+code { color: #b51d28; background: #fff1f2; padding: .18rem .4rem; border-radius: 6px; }
+hr { border-color: var(--ta-border); opacity: 1; }
+.login-card {
+  border: 1px solid rgba(255,255,255,.5) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 24px 70px rgba(0,0,0,.24) !important;
+}
+.login-card .form-control { min-height: 48px; }
+.login-card .btn-primary { min-height: 48px; }
+.developer-footer { color: #788398; }
+@media (max-width: 767.98px) {
+  .container-fluid.px-4 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .container-fluid.my-4 { margin-top: 1rem !important; }
+  .card-body { padding: 1rem; }
+  .navbar .container-fluid { gap: .65rem; align-items: flex-start !important; }
+  .navbar .navbar-brand { font-size: .95rem; max-width: 68%; }
+  .table { font-size: .86rem; }
+  .btn { white-space: normal; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}
+@media print {
+  body { background: #fff !important; color: #111 !important; }
+  .card { box-shadow: none !important; border: 0 !important; }
+  .table thead th { background: #eee !important; color: #111 !important; }
+}
+</style>
+"""
+
+@app.middleware("http")
+async def inject_global_design(request: Request, call_next):
+    response = await call_next(request)
+    content_type = response.headers.get("content-type", "")
+    if "text/html" not in content_type.lower() or request.method == "HEAD":
+        return response
+
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk if isinstance(chunk, bytes) else chunk.encode("utf-8")
+
+    try:
+        html = body.decode("utf-8")
+        if "</head>" in html.lower() and "time-attendance-design" not in html:
+            head_end = html.lower().rfind("</head>")
+            html = html[:head_end] + GLOBAL_DESIGN_CSS + html[head_end:]
+        headers = dict(response.headers)
+        headers.pop("content-length", None)
+        return Response(
+            content=html,
+            status_code=response.status_code,
+            headers=headers,
+            media_type="text/html",
+        )
+    except Exception:
+        return Response(content=body, status_code=response.status_code, headers=dict(response.headers))
+
+
 TRANSLATIONS = {
     "fr": {
         "login_title": "Connexion DRH - Hikvision",
@@ -363,12 +517,14 @@ async def get_logo():
     return Response(status_code=404)
 
 
-DRH_USERNAME = "drh"
-DRH_PASSWORD = "password123"
-SUPERVISOR_USERNAME = "superviseur"
-SUPERVISOR_PASSWORD = "password123"
-LECTEUR_USERNAME = "lecteur"
-LECTEUR_PASSWORD = "password123"
+# Comptes configurables par variables d'environnement.
+# Changez impérativement les mots de passe avant toute mise en production.
+DRH_USERNAME = os.getenv("ATTENDANCE_DRH_USERNAME", "drh")
+DRH_PASSWORD = os.getenv("ATTENDANCE_DRH_PASSWORD", "CHANGE_ME_DRH")
+SUPERVISOR_USERNAME = os.getenv("ATTENDANCE_SUPERVISOR_USERNAME", "superviseur")
+SUPERVISOR_PASSWORD = os.getenv("ATTENDANCE_SUPERVISOR_PASSWORD", "CHANGE_ME_SUPERVISOR")
+LECTEUR_USERNAME = os.getenv("ATTENDANCE_VIEWER_USERNAME", "lecteur")
+LECTEUR_PASSWORD = os.getenv("ATTENDANCE_VIEWER_PASSWORD", "CHANGE_ME_VIEWER")
 
 
 def get_session_role(drh_session: str = None) -> str:
@@ -549,7 +705,9 @@ async def login_page(request: Request, error: str = None, lang: str = Cookie(Non
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             body {{
-                background: linear-gradient(135deg, #232527 0%, #58595B 100%);
+                background:
+                    radial-gradient(circle at 15% 15%, rgba(215,25,32,.22), transparent 32%),
+                    linear-gradient(135deg, #111c30 0%, #263651 55%, #39465a 100%);
                 height: 100vh;
                 display: flex;
                 align-items: center;
